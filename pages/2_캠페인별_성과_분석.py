@@ -1,0 +1,1680 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import requests
+from io import StringIO
+
+
+# ============================================================
+# 0. 페이지 설정
+# ============================================================
+
+st.set_page_config(
+    page_title="캠페인 상세 분석",
+    page_icon="🔎",
+    layout="wide"
+)
+
+
+# ============================================================
+# 1. 좌측 사이드바
+# ============================================================
+
+with st.sidebar:
+
+    st.markdown("## 🔎 캠페인 상세 분석")
+
+    st.caption(
+        "캠페인 단위 성과를 상세하게 분석합니다."
+    )
+
+    st.divider()
+
+
+# ============================================================
+# 2. 제목
+# ============================================================
+
+st.title("🔎 캠페인 상세 분석")
+
+st.caption(
+    "선택한 기간·카테고리·매체 기준으로 캠페인 성과를 분석합니다."
+)
+
+
+# ============================================================
+# 3. Google Sheets 설정
+# ============================================================
+
+SHEET_ID = "1M_NGYvpXgY721bV-B0dgXOj5LmITfKoVTIoIJgmv6gk"
+GID = "519342112"
+
+SHEET_URL = (
+    f"https://docs.google.com/spreadsheets/d/"
+    f"{SHEET_ID}/export?format=csv&gid={GID}"
+)
+
+
+# ============================================================
+# 4. 데이터 불러오기
+# ============================================================
+
+@st.cache_data(ttl=300)
+def load_data():
+
+    response = requests.get(
+        SHEET_URL,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    df = pd.read_csv(
+        StringIO(
+            response.content.decode("utf-8-sig")
+        )
+    )
+
+
+    # ========================================================
+    # 컬럼명 정리
+    # ========================================================
+
+    df.columns = [
+        str(col).strip()
+        for col in df.columns
+    ]
+
+
+    # ========================================================
+    # 컬럼 자동 찾기
+    # ========================================================
+
+    def find_column(candidates):
+
+        # ----------------------------------------------------
+        # 정확히 일치
+        # ----------------------------------------------------
+
+        for candidate in candidates:
+
+            for col in df.columns:
+
+                if (
+                    str(col).strip().lower()
+                    == str(candidate).strip().lower()
+                ):
+                    return col
+
+
+        # ----------------------------------------------------
+        # 부분 일치
+        # ----------------------------------------------------
+
+        for candidate in candidates:
+
+            for col in df.columns:
+
+                if (
+                    str(candidate).strip().lower()
+                    in str(col).strip().lower()
+                ):
+                    return col
+
+
+        return None
+
+
+    date_col = find_column([
+        "date",
+        "날짜"
+    ])
+
+
+    type_col = find_column([
+        "type",
+        "광고유형",
+        "유형",
+        "카테고리"
+    ])
+
+
+    media_col = find_column([
+        "media2",
+        "media",
+        "매체"
+    ])
+
+
+    campaign_col = find_column([
+        "campaign",
+        "캠페인"
+    ])
+
+
+    impress_col = find_column([
+        "impress",
+        "imprress",
+        "impression",
+        "노출"
+    ])
+
+
+    click_col = find_column([
+        "click",
+        "클릭"
+    ])
+
+
+    spend_col = find_column([
+        "spend",
+        "광고비"
+    ])
+
+
+    conversion_col = find_column([
+        "conversion",
+        "db",
+        "전환"
+    ])
+
+
+    # ========================================================
+    # 필수 컬럼 확인
+    # ========================================================
+
+    required = {
+        "date": date_col,
+        "type": type_col,
+        "media": media_col,
+        "campaign": campaign_col,
+        "impress": impress_col,
+        "click": click_col,
+        "spend": spend_col,
+        "conversion": conversion_col
+    }
+
+
+    missing = [
+        key
+        for key, value in required.items()
+        if value is None
+    ]
+
+
+    if missing:
+
+        raise ValueError(
+            "필수 컬럼을 찾을 수 없습니다.\n\n"
+            f"누락 컬럼: {missing}\n\n"
+            f"현재 컬럼:\n{df.columns.tolist()}"
+        )
+
+
+    # ========================================================
+    # 중복 컬럼명 대응
+    # ========================================================
+
+    def get_series(column_name):
+
+        positions = [
+            i
+            for i, col in enumerate(df.columns)
+            if str(col).strip()
+            == str(column_name).strip()
+        ]
+
+
+        if not positions:
+
+            raise ValueError(
+                f"컬럼을 찾을 수 없습니다: {column_name}"
+            )
+
+
+        # 첫 번째 컬럼을 Series로 가져옴
+        return df.iloc[:, positions[0]].copy()
+
+
+    # ========================================================
+    # 필요한 컬럼만 새 DataFrame 생성
+    # ========================================================
+
+    clean_df = pd.DataFrame()
+
+
+    clean_df["date"] = get_series(
+        date_col
+    )
+
+    clean_df["type"] = get_series(
+        type_col
+    )
+
+    clean_df["media"] = get_series(
+        media_col
+    )
+
+    clean_df["campaign"] = get_series(
+        campaign_col
+    )
+
+    clean_df["impress"] = get_series(
+        impress_col
+    )
+
+    clean_df["click"] = get_series(
+        click_col
+    )
+
+    clean_df["spend"] = get_series(
+        spend_col
+    )
+
+    clean_df["conversion"] = get_series(
+        conversion_col
+    )
+
+
+    # ========================================================
+    # 날짜 처리
+    # ========================================================
+
+    clean_df["date"] = pd.to_datetime(
+        clean_df["date"],
+        errors="coerce"
+    )
+
+
+    # ========================================================
+    # 숫자 컬럼 처리
+    # ========================================================
+
+    numeric_cols = [
+        "impress",
+        "click",
+        "spend",
+        "conversion"
+    ]
+
+
+    for col in numeric_cols:
+
+        clean_df[col] = (
+            clean_df[col]
+            .astype("string")
+            .str.replace(
+                ",",
+                "",
+                regex=False
+            )
+            .str.replace(
+                "-",
+                "0",
+                regex=False
+            )
+            .str.strip()
+        )
+
+
+        clean_df[col] = pd.to_numeric(
+            clean_df[col],
+            errors="coerce"
+        ).fillna(0)
+
+
+    # ========================================================
+    # 문자 컬럼 처리
+    # ========================================================
+
+    text_cols = [
+        "type",
+        "media",
+        "campaign"
+    ]
+
+
+    for col in text_cols:
+
+        clean_df[col] = (
+            clean_df[col]
+            .fillna("미분류")
+            .astype("string")
+            .str.strip()
+        )
+
+
+        clean_df.loc[
+            clean_df[col].isna() |
+            (clean_df[col] == ""),
+            col
+        ] = "미분류"
+
+
+    # ========================================================
+    # 날짜 없는 데이터 제거
+    # ========================================================
+
+    clean_df = clean_df.dropna(
+        subset=["date"]
+    ).copy()
+
+
+    # ========================================================
+    # 날짜 정규화
+    # ========================================================
+
+    clean_df["date"] = (
+        clean_df["date"]
+        .dt.normalize()
+    )
+
+
+    # ========================================================
+    # 최종 정리
+    # ========================================================
+
+    clean_df = clean_df[
+        [
+            "date",
+            "type",
+            "media",
+            "campaign",
+            "impress",
+            "click",
+            "spend",
+            "conversion"
+        ]
+    ]
+
+
+    return (
+        clean_df
+        .sort_values("date")
+        .reset_index(drop=True)
+    )
+
+
+# ============================================================
+# 5. 데이터 로드
+# ============================================================
+
+try:
+
+    df = load_data()
+
+except Exception as e:
+
+    st.error(
+        "Google Sheets 데이터를 불러오지 못했습니다."
+    )
+
+    st.code(
+        str(e)
+    )
+
+    st.stop()
+
+
+if df.empty:
+
+    st.warning(
+        "데이터가 없습니다."
+    )
+
+    st.stop()
+
+
+# ============================================================
+# 6. 분석 조건
+# ============================================================
+
+st.subheader("🔎 분석 조건")
+
+
+available_dates = sorted(
+    df["date"]
+    .dropna()
+    .unique()
+)
+
+
+if not available_dates:
+
+    st.warning(
+        "분석 가능한 날짜 데이터가 없습니다."
+    )
+
+    st.stop()
+
+
+min_date = pd.Timestamp(
+    min(available_dates)
+).date()
+
+
+max_date = pd.Timestamp(
+    max(available_dates)
+).date()
+
+
+col1, col2, col3 = st.columns(
+    [1, 2, 2]
+)
+
+
+# ============================================================
+# 6-1. 분석 기간
+# ============================================================
+
+with col1:
+
+    # 데이터의 가장 마지막 날짜
+    latest_date = max_date
+
+
+    # --------------------------------------------------------
+    # 분석 기간 선택
+    # --------------------------------------------------------
+
+    period_option = st.selectbox(
+        "분석 기간",
+        options=[
+            "전일",
+            "최근 7일",
+            "최근 30일",
+            "지정"
+        ],
+        index=0,
+        key="detail_period_option"
+    )
+
+
+    # --------------------------------------------------------
+    # 전일
+    # 최신 데이터 날짜를 전일로 사용
+    # --------------------------------------------------------
+
+    if period_option == "전일":
+
+        analysis_start = latest_date
+        analysis_end = latest_date
+
+
+    # --------------------------------------------------------
+    # 최근 7일
+    # --------------------------------------------------------
+
+    elif period_option == "최근 7일":
+
+        analysis_start = (
+            latest_date -
+            pd.Timedelta(days=6)
+        )
+
+        analysis_end = latest_date
+
+
+    # --------------------------------------------------------
+    # 최근 30일
+    # --------------------------------------------------------
+
+    elif period_option == "최근 30일":
+
+        analysis_start = (
+            latest_date -
+            pd.Timedelta(days=29)
+        )
+
+        analysis_end = latest_date
+
+
+    # --------------------------------------------------------
+    # 지정
+    # --------------------------------------------------------
+
+    else:
+
+        analysis_start = st.date_input(
+            "시작일",
+            value=latest_date,
+            min_value=min_date,
+            max_value=latest_date,
+            key="detail_start_date"
+        )
+
+        analysis_end = st.date_input(
+            "종료일",
+            value=latest_date,
+            min_value=min_date,
+            max_value=latest_date,
+            key="detail_end_date"
+        )
+
+
+    # --------------------------------------------------------
+    # 선택한 분석 기간 표시
+    # --------------------------------------------------------
+
+    if analysis_start == analysis_end:
+
+        period_text = pd.Timestamp(
+            analysis_start
+        ).strftime("%Y-%m-%d")
+
+    else:
+
+        period_text = (
+            f"{pd.Timestamp(analysis_start).strftime('%Y-%m-%d')}"
+            f" ~ "
+            f"{pd.Timestamp(analysis_end).strftime('%Y-%m-%d')}"
+        )
+
+
+    st.caption(
+        f"📅 {period_text}"
+    )
+# ============================================================
+# 6-2. 카테고리
+# ============================================================
+
+with col2:
+
+    type_options = sorted(
+        df["type"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+
+
+    selected_type = st.multiselect(
+        "카테고리",
+        options=type_options,
+        default=type_options,
+        key="detail_type"
+    )
+
+
+# ============================================================
+# 6-3. 매체
+# ============================================================
+
+with col3:
+
+    media_options = sorted(
+        df["media"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+
+    # 성과 비교 분석에서 사용한 매체 선택값이 있으면 사용
+    if "media_filter" in st.session_state:
+        default_media = [
+            media
+            for media in st.session_state["media_filter"]
+            if media in media_options
+        ]
+    else:
+        default_media = media_options
+
+    selected_media = st.multiselect(
+        "매체 선택",
+        options=media_options,
+        default=default_media,
+        key="detail_media"
+    )
+# ============================================================
+# 7. 기간 오류
+# ============================================================
+
+if analysis_start > analysis_end:
+
+    st.error(
+        "시작일은 종료일보다 빠르거나 같아야 합니다."
+    )
+
+    st.stop()
+
+
+# ============================================================
+# 8. 데이터 필터
+# ============================================================
+
+filtered_df = df[
+    (df["date"] >= pd.Timestamp(analysis_start)) &
+    (df["date"] <= pd.Timestamp(analysis_end)) &
+    (df["type"].isin(selected_type)) &
+    (df["media"].isin(selected_media))
+].copy()
+
+
+# ============================================================
+# 9. 전체 성과 계산
+# ============================================================
+
+total_spend = filtered_df["spend"].sum()
+
+total_click = filtered_df["click"].sum()
+
+total_conversion = filtered_df["conversion"].sum()
+
+
+total_cpa = (
+    total_spend / total_conversion
+    if total_conversion > 0
+    else np.nan
+)
+
+
+total_cvr = (
+    total_conversion / total_click * 100
+    if total_click > 0
+    else np.nan
+)
+
+
+# ============================================================
+# 10. 전체 성과
+# ============================================================
+
+st.divider()
+
+st.header("📊 전체 성과")
+
+
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+
+with kpi1:
+
+    st.metric(
+        "광고비",
+        f"{total_spend:,.0f}원"
+    )
+
+
+with kpi2:
+
+    st.metric(
+        "클릭",
+        f"{total_click:,.0f}회"
+    )
+
+
+with kpi3:
+
+    st.metric(
+        "전환",
+        f"{total_conversion:,.0f}건"
+    )
+
+
+with kpi4:
+
+    st.metric(
+        "CPA",
+        (
+            f"{total_cpa:,.0f}원"
+            if pd.notna(total_cpa)
+            else "-"
+        )
+    )
+
+
+st.caption(
+    f"분석 기간: "
+    f"{pd.Timestamp(analysis_start).strftime('%Y-%m-%d')}"
+    f" ~ "
+    f"{pd.Timestamp(analysis_end).strftime('%Y-%m-%d')}"
+)
+
+
+# ============================================================
+# 11. 캠페인별 집계
+# ============================================================
+
+campaign = (
+    filtered_df
+    .groupby(
+        "campaign",
+        as_index=False
+    )
+    .agg({
+        "impress": "sum",
+        "click": "sum",
+        "spend": "sum",
+        "conversion": "sum"
+    })
+)
+
+
+# ============================================================
+# 12. CPA / CVR 계산
+# ============================================================
+
+campaign["CPA"] = np.where(
+    campaign["conversion"] > 0,
+    campaign["spend"] /
+    campaign["conversion"],
+    np.nan
+)
+
+
+campaign["CVR"] = np.where(
+    campaign["click"] > 0,
+    campaign["conversion"] /
+    campaign["click"] * 100,
+    np.nan
+)
+
+
+# ============================================================
+# 13. 전체 전환 비중
+# ============================================================
+
+if total_conversion > 0:
+
+    campaign["conversion_share"] = (
+        campaign["conversion"] /
+        total_conversion *
+        100
+    )
+
+else:
+
+    campaign["conversion_share"] = np.nan
+
+
+# ============================================================
+# 14. 0원 / 0개 제외
+# ============================================================
+
+# 전환이 1개 이상 발생한 캠페인만 사용
+campaign_valid = campaign[
+    campaign["conversion"] > 0
+].copy()
+
+
+# ============================================================
+# 15. 캠페인별 전환수
+# ============================================================
+
+campaign_conversion = (
+    campaign_valid
+    .sort_values(
+        "conversion",
+        ascending=False
+    )
+    .reset_index(drop=True)
+)
+
+
+# ============================================================
+# 16. 캠페인별 CPA
+# ============================================================
+
+campaign_cpa = (
+    campaign_valid[
+        campaign_valid["CPA"] > 0
+    ]
+    .sort_values(
+        "CPA",
+        ascending=True
+    )
+    .reset_index(drop=True)
+)
+
+
+# ============================================================
+# 17. 캠페인 성과
+# ============================================================
+
+st.divider()
+
+st.header("📈 캠페인별 성과")
+
+
+if campaign_valid.empty:
+
+    st.info(
+        "선택한 조건에서 전환이 발생한 캠페인이 없습니다."
+    )
+
+else:
+
+    # ========================================================
+    # 17-1. 캠페인별 전환수
+    # ========================================================
+
+    st.subheader("📊 캠페인별 전환수")
+
+    fig_conversion = go.Figure()
+
+
+    fig_conversion.add_trace(
+        go.Bar(
+            x=campaign_conversion["campaign"],
+            y=campaign_conversion["conversion"],
+            text=campaign_conversion["conversion"],
+            texttemplate="%{text:,.0f}건",
+            textposition="outside",
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "전환: %{y:,.0f}건"
+                "<extra></extra>"
+            )
+        )
+    )
+
+
+    fig_conversion.update_layout(
+        xaxis_title="캠페인",
+        yaxis_title="전환수",
+        height=500,
+        xaxis=dict(
+            tickangle=-45
+        )
+    )
+
+
+    st.plotly_chart(
+        fig_conversion,
+        width="stretch"
+    )
+
+
+    # ========================================================
+    # 17-2. 캠페인별 CPA
+    # ========================================================
+
+    st.subheader("💰 캠페인별 CPA")
+
+    fig_cpa = go.Figure()
+
+
+    fig_cpa.add_trace(
+        go.Bar(
+            x=campaign_cpa["campaign"],
+            y=campaign_cpa["CPA"],
+            text=campaign_cpa["CPA"],
+            texttemplate="%{text:,.0f}원",
+            textposition="outside",
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "CPA: %{y:,.0f}원"
+                "<extra></extra>"
+            )
+        )
+    )
+
+
+    fig_cpa.update_layout(
+        xaxis_title="캠페인",
+        yaxis_title="CPA",
+        height=500,
+        xaxis=dict(
+            tickangle=-45
+        ),
+        yaxis=dict(
+            tickformat=","
+        )
+    )
+
+
+    st.plotly_chart(
+        fig_cpa,
+        width="stretch"
+    )
+
+
+
+
+# ============================================================
+# 18. 캠페인 TOP 분석
+# ============================================================
+
+st.divider()
+
+st.header("🏆 캠페인 성과 TOP")
+
+
+if campaign_valid.empty:
+
+    st.info(
+        "분석할 캠페인이 없습니다."
+    )
+
+else:
+
+    top1, top2, top3 = st.columns(3)
+
+
+    # ========================================================
+    # 18-1. CPA 최우수
+    # ========================================================
+
+    cpa_valid = campaign_valid[
+        (campaign_valid["CPA"].notna()) &
+        (campaign_valid["CPA"] > 0)
+    ]
+
+
+    if not cpa_valid.empty:
+
+        best_cpa = cpa_valid.loc[
+            cpa_valid["CPA"].idxmin()
+        ]
+
+
+        with top1:
+
+            st.markdown(
+                "### 🏆 CPA 최우수"
+            )
+
+            st.markdown(
+                f"**{best_cpa['campaign']}**"
+            )
+
+            st.write(
+                f"CPA: {best_cpa['CPA']:,.0f}원"
+            )
+
+            st.write(
+                f"전환: {best_cpa['conversion']:,.0f}건"
+            )
+
+            st.write(
+                f"CVR: {best_cpa['CVR']:.2f}%"
+            )
+
+
+    # ========================================================
+    # 18-2. 전환수 최다
+    # ========================================================
+
+    conversion_valid = campaign_valid[
+        campaign_valid["conversion"] > 0
+    ]
+
+
+    if not conversion_valid.empty:
+
+        best_conversion = conversion_valid.loc[
+            conversion_valid["conversion"].idxmax()
+        ]
+
+
+        with top2:
+
+            st.markdown(
+                "### 📈 전환수 최다"
+            )
+
+            st.markdown(
+                f"**{best_conversion['campaign']}**"
+            )
+
+            st.write(
+                f"전환: "
+                f"{best_conversion['conversion']:,.0f}건"
+            )
+
+            if pd.notna(
+                best_conversion["CPA"]
+            ):
+
+                st.write(
+                    f"CPA: "
+                    f"{best_conversion['CPA']:,.0f}원"
+                )
+
+            else:
+
+                st.write(
+                    "CPA: -"
+                )
+
+
+            st.write(
+                f"전체 전환의 "
+                f"{best_conversion['conversion_share']:.1f}%"
+            )
+
+
+    # ========================================================
+    # 18-3. CVR 최우수
+    # ========================================================
+
+    cvr_valid = campaign_valid[
+        (campaign_valid["click"] > 0) &
+        campaign_valid["CVR"].notna()
+    ]
+
+
+    if not cvr_valid.empty:
+
+        best_cvr = cvr_valid.loc[
+            cvr_valid["CVR"].idxmax()
+        ]
+
+
+        with top3:
+
+            st.markdown(
+                "### 🎯 CVR 최우수"
+            )
+
+            st.markdown(
+                f"**{best_cvr['campaign']}**"
+            )
+
+            st.write(
+                f"CVR: "
+                f"{best_cvr['CVR']:.2f}%"
+            )
+
+            st.write(
+                f"전환: "
+                f"{best_cvr['conversion']:,.0f}건"
+            )
+
+            st.write(
+                f"클릭: "
+                f"{best_cvr['click']:,.0f}회"
+            )
+
+
+# ============================================================
+# 19. 개선 필요 캠페인
+# ============================================================
+
+st.divider()
+
+st.header("⚠️ 개선 필요 캠페인")
+
+
+if campaign_valid.empty:
+
+    st.info(
+        "분석할 캠페인이 없습니다."
+    )
+
+else:
+
+    high_cpa = (
+        campaign_valid[
+            (campaign_valid["conversion"] > 0) &
+            campaign_valid["CPA"].notna() &
+            (campaign_valid["CPA"] > 0)
+        ]
+        .sort_values(
+            "CPA",
+            ascending=False
+        )
+    )
+
+
+    if not high_cpa.empty:
+
+        st.markdown(
+            "#### CPA가 높은 캠페인"
+        )
+
+
+        warning_df = high_cpa[
+            [
+                "campaign",
+                "spend",
+                "conversion",
+                "CPA",
+                "CVR"
+            ]
+        ].head(5).copy()
+
+
+        warning_df = warning_df.rename(
+            columns={
+                "campaign": "캠페인",
+                "spend": "광고비",
+                "conversion": "전환",
+                "CPA": "CPA",
+                "CVR": "CVR"
+            }
+        )
+
+
+        st.dataframe(
+
+            warning_df,
+
+            width="stretch",
+
+            hide_index=True,
+
+            column_config={
+
+                "광고비": st.column_config.NumberColumn(
+                    format="%,d원"
+                ),
+
+                "전환": st.column_config.NumberColumn(
+                    format="%,d건"
+                ),
+
+                "CPA": st.column_config.NumberColumn(
+                    format="%,d원"
+                ),
+
+                "CVR": st.column_config.NumberColumn(
+                    format="%.2f%%"
+                )
+            }
+        )
+
+
+    else:
+
+        st.info(
+            "전환이 발생한 캠페인이 없습니다."
+        )
+
+
+# ============================================================
+# 20. 캠페인 상세 데이터
+# ============================================================
+
+st.divider()
+
+st.header("📋 캠페인 상세 성과")
+
+
+if campaign_valid.empty:
+
+    st.info(
+        "분석 조건에 해당하는 캠페인의 데이터가 없습니다."
+    )
+
+else:
+
+    # ========================================================
+    # CPA 낮은 순으로 정렬
+    # ========================================================
+
+    detail_table = (
+        campaign_valid[
+            [
+                "campaign",
+                "impress",
+                "click",
+                "spend",
+                "conversion",
+                "CPA",
+                "CVR",
+                "conversion_share"
+            ]
+        ]
+        .sort_values(
+            "CPA",
+            ascending=True
+        )
+        .copy()
+    )
+
+
+    detail_table = detail_table.rename(
+        columns={
+            "campaign": "캠페인",
+            "impress": "노출",
+            "click": "클릭",
+            "spend": "광고비",
+            "conversion": "전환",
+            "CPA": "CPA",
+            "CVR": "CVR",
+            "conversion_share": "전체 전환 비중"
+        }
+    )
+
+
+    st.dataframe(
+
+        detail_table,
+
+        width="stretch",
+
+        hide_index=True,
+
+        column_config={
+
+            "노출": st.column_config.NumberColumn(
+                format="%,d"
+            ),
+
+            "클릭": st.column_config.NumberColumn(
+                format="%,d"
+            ),
+
+            "광고비": st.column_config.NumberColumn(
+                format="%,d원"
+            ),
+
+            "전환": st.column_config.NumberColumn(
+                format="%,d건"
+            ),
+
+            "CPA": st.column_config.NumberColumn(
+                format="%,d원"
+            ),
+
+            "CVR": st.column_config.NumberColumn(
+                format="%.2f%%"
+            ),
+
+            "전체 전환 비중": st.column_config.NumberColumn(
+                format="%.1f%%"
+            )
+        }
+    )
+
+
+# ============================================================
+# 18. 성과 추이
+# ============================================================
+
+st.divider()
+
+st.header("📈 성과 추이")
+
+st.caption(
+    "현재 설정한 분석 기간 내 캠페인 전체 성과 추이를 확인합니다."
+)
+
+
+# ============================================================
+# 18-1. 성과 추이 데이터 생성
+# ============================================================
+
+def create_trend_data(
+    data,
+    start_date,
+    end_date,
+    trend_type
+):
+
+    temp = data[
+        (data["date"] >= pd.Timestamp(start_date))
+        &
+        (data["date"] <= pd.Timestamp(end_date))
+    ].copy()
+
+
+    if temp.empty:
+
+        return pd.DataFrame(
+            columns=[
+                "period",
+                "spend",
+                "click",
+                "conversion",
+                "CPA",
+                "CVR"
+            ]
+        )
+
+
+    # --------------------------------------------------------
+    # 일자별
+    # --------------------------------------------------------
+
+    if trend_type == "일자별":
+
+        temp["period"] = temp["date"]
+
+
+    # --------------------------------------------------------
+    # 주차별
+    # --------------------------------------------------------
+
+    elif trend_type == "주차별":
+
+        temp["period"] = (
+            temp["date"]
+            -
+            pd.to_timedelta(
+                temp["date"].dt.weekday,
+                unit="D"
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # 월별
+    # --------------------------------------------------------
+
+    else:
+
+        temp["period"] = (
+            temp["date"]
+            .dt.to_period("M")
+            .dt.to_timestamp()
+        )
+
+
+    # --------------------------------------------------------
+    # 기간별 집계
+    # --------------------------------------------------------
+
+    result = (
+        temp
+        .groupby(
+            "period",
+            as_index=False
+        )
+        .agg(
+            spend=("spend", "sum"),
+            click=("click", "sum"),
+            conversion=("conversion", "sum")
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # CPA
+    # --------------------------------------------------------
+
+    result["CPA"] = np.where(
+        result["conversion"] > 0,
+        result["spend"] /
+        result["conversion"],
+        np.nan
+    )
+
+
+    # --------------------------------------------------------
+    # CVR
+    # --------------------------------------------------------
+
+    result["CVR"] = np.where(
+        result["click"] > 0,
+        result["conversion"] /
+        result["click"] *
+        100,
+        np.nan
+    )
+
+
+    return result.sort_values(
+        "period"
+    )
+
+
+# ============================================================
+# 18-2. 캠페인 선택
+# ============================================================
+
+trend_campaign_options = sorted(
+    filtered_df["campaign"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+selected_trend_campaigns = st.multiselect(
+    "성과 추이를 볼 캠페인",
+    options=trend_campaign_options,
+    default=trend_campaign_options,
+    key="trend_campaign_filter"
+)
+
+
+trend_filtered_df = filtered_df[
+    filtered_df["campaign"].isin(
+        selected_trend_campaigns
+    )
+].copy()
+
+
+# ============================================================
+# 18-3. 추이 그래프
+# ============================================================
+
+trend_tab1, trend_tab2, trend_tab3 = st.tabs(
+    [
+        "📅 일자별",
+        "📆 주차별",
+        "🗓️ 월별"
+    ]
+)
+
+
+def draw_trend_chart(
+    trend_type
+):
+
+    trend_df = create_trend_data(
+        trend_filtered_df,
+        analysis_start,
+        analysis_end,
+        trend_type
+    )
+
+
+    if trend_df.empty:
+
+        st.info(
+            "선택한 조건에 해당하는 성과 데이터가 없습니다."
+        )
+
+        return
+
+
+    # --------------------------------------------------------
+    # X축
+    # --------------------------------------------------------
+
+    if trend_type in [
+        "일자별",
+        "주차별"
+    ]:
+
+        x_values = (
+            trend_df["period"]
+            .dt.strftime("%m/%d")
+        )
+
+    else:
+
+        x_values = (
+            trend_df["period"]
+            .dt.strftime("%Y-%m")
+        )
+
+
+    # ========================================================
+    # 그래프
+    # ========================================================
+
+    fig = go.Figure()
+
+
+    # --------------------------------------------------------
+    # CPA
+    # --------------------------------------------------------
+
+    fig.add_trace(
+        go.Bar(
+            x=x_values,
+            y=trend_df["CPA"],
+            name="CPA",
+            text=[
+                (
+                    f"{v:,.0f}원"
+                    if pd.notna(v)
+                    else "-"
+                )
+                for v in trend_df["CPA"]
+            ],
+            textposition="outside",
+            hovertemplate=(
+                "%{x}<br>"
+                "CPA: %{y:,.0f}원"
+                "<extra></extra>"
+            )
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 전환수
+    # --------------------------------------------------------
+
+    fig.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=trend_df["conversion"],
+            name="전환수",
+            mode="lines+markers",
+            yaxis="y2",
+            hovertemplate=(
+                "%{x}<br>"
+                "전환수: %{y:,.0f}건"
+                "<extra></extra>"
+            )
+        )
+    )
+
+
+    # ========================================================
+    # 레이아웃
+    # ========================================================
+
+    fig.update_layout(
+
+        title=(
+            f"{trend_type} CPA + 전환수"
+            f"<br><sup>"
+            f"{pd.Timestamp(analysis_start).strftime('%Y-%m-%d')}"
+            f" ~ "
+            f"{pd.Timestamp(analysis_end).strftime('%Y-%m-%d')}"
+            f"</sup>"
+        ),
+
+        height=420,
+
+        margin=dict(
+            l=60,
+            r=60,
+            t=90,
+            b=70
+        ),
+
+        xaxis=dict(
+            title=trend_type,
+            type="category",
+            tickangle=-30,
+            automargin=True
+        ),
+
+        yaxis=dict(
+            title="CPA"
+        ),
+
+        yaxis2=dict(
+            title="전환수",
+            overlaying="y",
+            side="right"
+        ),
+
+        hovermode="x unified",
+
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.25,
+            xanchor="center",
+            x=0.5
+        )
+    )
+
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "displayModeBar": False
+        }
+    )
+
+
+# ============================================================
+# 일자별
+# ============================================================
+
+with trend_tab1:
+
+    draw_trend_chart("일자별")
+
+
+# ============================================================
+# 주차별
+# ============================================================
+
+with trend_tab2:
+
+    draw_trend_chart("주차별")
+
+
+# ============================================================
+# 월별
+# ============================================================
+
+with trend_tab3:
+
+    draw_trend_chart("월별")
+
+# ============================================================
+# 21. 데이터 정보
+# ============================================================
+
+st.divider()
+
+with st.expander("📌 데이터 정보"):
+
+    st.write(
+        f"전체 데이터: {len(df):,}건"
+    )
+
+
+    st.write(
+        f"분석 데이터: {len(filtered_df):,}건"
+    )
+
+
+    st.write(
+        f"분석 기간: "
+        f"{pd.Timestamp(analysis_start).strftime('%Y-%m-%d')}"
+        f" ~ "
+        f"{pd.Timestamp(analysis_end).strftime('%Y-%m-%d')}"
+    )
+
+
+    st.write(
+        f"선택 카테고리: "
+        f"{len(selected_type)}개"
+    )
+
+
+    st.write(
+        f"선택 매체: "
+        f"{len(selected_media)}개"
+    )
+
+
+    st.write(
+        f"분석 캠페인: "
+        f"{len(campaign_valid):,}개"
+    )
