@@ -39,7 +39,7 @@ with st.sidebar:
 st.title("🔎 캠페인 상세 분석")
 
 st.caption(
-    "선택한 기간·카테고리·매체 기준으로 캠페인 성과를 분석합니다."
+    "선택한 기간·카테고리·기기·매체 기준으로 캠페인 성과를 분석합니다."
 )
 
 
@@ -126,11 +126,19 @@ def load_data():
         return None
 
 
+    # ========================================================
+    # 날짜
+    # ========================================================
+
     date_col = find_column([
         "date",
         "날짜"
     ])
 
+
+    # ========================================================
+    # 카테고리
+    # ========================================================
 
     type_col = find_column([
         "type",
@@ -140,6 +148,22 @@ def load_data():
     ])
 
 
+    # ========================================================
+    # 기기
+    # ========================================================
+
+    device_col = find_column([
+        "device",
+        "DEVICE",
+        "기기",
+        "디바이스"
+    ])
+
+
+    # ========================================================
+    # 매체
+    # ========================================================
+
     media_col = find_column([
         "media2",
         "media",
@@ -147,11 +171,19 @@ def load_data():
     ])
 
 
+    # ========================================================
+    # 캠페인
+    # ========================================================
+
     campaign_col = find_column([
         "campaign",
         "캠페인"
     ])
 
+
+    # ========================================================
+    # 노출
+    # ========================================================
 
     impress_col = find_column([
         "impress",
@@ -161,17 +193,29 @@ def load_data():
     ])
 
 
+    # ========================================================
+    # 클릭
+    # ========================================================
+
     click_col = find_column([
         "click",
         "클릭"
     ])
 
 
+    # ========================================================
+    # 광고비
+    # ========================================================
+
     spend_col = find_column([
         "spend",
         "광고비"
     ])
 
+
+    # ========================================================
+    # 전환
+    # ========================================================
 
     conversion_col = find_column([
         "conversion",
@@ -185,14 +229,25 @@ def load_data():
     # ========================================================
 
     required = {
+
         "date": date_col,
+
         "type": type_col,
+
+        "device": device_col,
+
         "media": media_col,
+
         "campaign": campaign_col,
+
         "impress": impress_col,
+
         "click": click_col,
+
         "spend": spend_col,
+
         "conversion": conversion_col
+
     }
 
 
@@ -233,7 +288,6 @@ def load_data():
             )
 
 
-        # 첫 번째 컬럼을 Series로 가져옴
         return df.iloc[:, positions[0]].copy()
 
 
@@ -248,29 +302,41 @@ def load_data():
         date_col
     )
 
+
     clean_df["type"] = get_series(
         type_col
     )
+
+
+    clean_df["device"] = get_series(
+        device_col
+    )
+
 
     clean_df["media"] = get_series(
         media_col
     )
 
+
     clean_df["campaign"] = get_series(
         campaign_col
     )
+
 
     clean_df["impress"] = get_series(
         impress_col
     )
 
+
     clean_df["click"] = get_series(
         click_col
     )
 
+
     clean_df["spend"] = get_series(
         spend_col
     )
+
 
     clean_df["conversion"] = get_series(
         conversion_col
@@ -330,6 +396,7 @@ def load_data():
 
     text_cols = [
         "type",
+        "device",
         "media",
         "campaign"
     ]
@@ -346,7 +413,8 @@ def load_data():
 
 
         clean_df.loc[
-            clean_df[col].isna() |
+            clean_df[col].isna()
+            |
             (clean_df[col] == ""),
             col
         ] = "미분류"
@@ -379,6 +447,7 @@ def load_data():
         [
             "date",
             "type",
+            "device",
             "media",
             "campaign",
             "impress",
@@ -459,24 +528,22 @@ max_date = pd.Timestamp(
 ).date()
 
 
-col1, col2, col3 = st.columns(
-    [1, 2, 2]
-)
-
-
 # ============================================================
 # 6-1. 분석 기간
 # ============================================================
 
-with col1:
+st.markdown("### 📅 분석 기간")
 
-    # 데이터의 가장 마지막 날짜
+
+period_col1, period_col2 = st.columns(
+    [1, 3]
+)
+
+
+with period_col1:
+
     latest_date = max_date
 
-
-    # --------------------------------------------------------
-    # 분석 기간 선택
-    # --------------------------------------------------------
 
     period_option = st.selectbox(
         "분석 기간",
@@ -493,7 +560,6 @@ with col1:
 
     # --------------------------------------------------------
     # 전일
-    # 최신 데이터 날짜를 전일로 사용
     # --------------------------------------------------------
 
     if period_option == "전일":
@@ -509,8 +575,8 @@ with col1:
     elif period_option == "최근 7일":
 
         analysis_start = (
-            latest_date -
-            pd.Timedelta(days=6)
+            latest_date
+            - pd.Timedelta(days=6)
         )
 
         analysis_end = latest_date
@@ -523,8 +589,8 @@ with col1:
     elif period_option == "최근 30일":
 
         analysis_start = (
-            latest_date -
-            pd.Timedelta(days=29)
+            latest_date
+            - pd.Timedelta(days=29)
         )
 
         analysis_end = latest_date
@@ -553,9 +619,7 @@ with col1:
         )
 
 
-    # --------------------------------------------------------
-    # 선택한 분석 기간 표시
-    # --------------------------------------------------------
+with period_col2:
 
     if analysis_start == analysis_end:
 
@@ -572,22 +636,54 @@ with col1:
         )
 
 
-    st.caption(
-        f"📅 {period_text}"
-    )
-# ============================================================
-# 6-2. 카테고리
-# ============================================================
+    st.markdown("### 📅 선택 기간")
 
-with col2:
-
-    type_options = sorted(
-        df["type"]
-        .dropna()
-        .unique()
-        .tolist()
+    st.info(
+        f"**{period_text}**"
     )
 
+
+# ============================================================
+# 6-2. 필터 조건
+# ============================================================
+
+st.markdown("### 🎯 필터 조건")
+
+
+type_options = sorted(
+    df["type"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+device_options = sorted(
+    df["device"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+media_options = sorted(
+    df["media"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+filter_col1, filter_col2, filter_col3 = st.columns(
+    [1, 1, 2]
+)
+
+
+# ============================================================
+# 카테고리
+# ============================================================
+
+with filter_col1:
 
     selected_type = st.multiselect(
         "카테고리",
@@ -598,27 +694,37 @@ with col2:
 
 
 # ============================================================
-# 6-3. 매체
+# 기기
 # ============================================================
 
-with col3:
+with filter_col2:
 
-    media_options = sorted(
-        df["media"]
-        .dropna()
-        .unique()
-        .tolist()
+    selected_device = st.multiselect(
+        "기기",
+        options=device_options,
+        default=device_options,
+        key="detail_device"
     )
 
-    # 성과 비교 분석에서 사용한 매체 선택값이 있으면 사용
+
+# ============================================================
+# 매체
+# ============================================================
+
+with filter_col3:
+
     if "media_filter" in st.session_state:
+
         default_media = [
             media
             for media in st.session_state["media_filter"]
             if media in media_options
         ]
+
     else:
+
         default_media = media_options
+
 
     selected_media = st.multiselect(
         "매체 선택",
@@ -626,6 +732,8 @@ with col3:
         default=default_media,
         key="detail_media"
     )
+
+
 # ============================================================
 # 7. 기간 오류
 # ============================================================
@@ -644,9 +752,14 @@ if analysis_start > analysis_end:
 # ============================================================
 
 filtered_df = df[
-    (df["date"] >= pd.Timestamp(analysis_start)) &
-    (df["date"] <= pd.Timestamp(analysis_end)) &
-    (df["type"].isin(selected_type)) &
+    (df["date"] >= pd.Timestamp(analysis_start))
+    &
+    (df["date"] <= pd.Timestamp(analysis_end))
+    &
+    (df["type"].isin(selected_type))
+    &
+    (df["device"].isin(selected_device))
+    &
     (df["media"].isin(selected_media))
 ].copy()
 
@@ -792,7 +905,6 @@ else:
 # 14. 0원 / 0개 제외
 # ============================================================
 
-# 전환이 1개 이상 발생한 캠페인만 사용
 campaign_valid = campaign[
     campaign["conversion"] > 0
 ].copy()
@@ -928,8 +1040,6 @@ else:
         fig_cpa,
         width="stretch"
     )
-
-
 
 
 # ============================================================
@@ -1148,13 +1258,9 @@ else:
 
 
         st.dataframe(
-
             warning_df,
-
             width="stretch",
-
             hide_index=True,
-
             column_config={
 
                 "광고비": st.column_config.NumberColumn(
@@ -1200,10 +1306,6 @@ if campaign_valid.empty:
 
 else:
 
-    # ========================================================
-    # CPA 낮은 순으로 정렬
-    # ========================================================
-
     detail_table = (
         campaign_valid[
             [
@@ -1240,13 +1342,9 @@ else:
 
 
     st.dataframe(
-
         detail_table,
-
         width="stretch",
-
         hide_index=True,
-
         column_config={
 
             "노출": st.column_config.NumberColumn(
@@ -1281,7 +1379,7 @@ else:
 
 
 # ============================================================
-# 18. 성과 추이
+# 21. 성과 추이
 # ============================================================
 
 st.divider()
@@ -1289,12 +1387,12 @@ st.divider()
 st.header("📈 성과 추이")
 
 st.caption(
-    "현재 설정한 분석 기간 내 캠페인 전체 성과 추이를 확인합니다."
+    "현재 설정한 분석 기간·카테고리·기기·매체 조건 내 캠페인 성과 추이를 확인합니다."
 )
 
 
 # ============================================================
-# 18-1. 성과 추이 데이터 생성
+# 21-1. 성과 추이 데이터 생성
 # ============================================================
 
 def create_trend_data(
@@ -1412,7 +1510,7 @@ def create_trend_data(
 
 
 # ============================================================
-# 18-2. 캠페인 선택
+# 21-2. 캠페인 선택
 # ============================================================
 
 trend_campaign_options = sorted(
@@ -1439,7 +1537,7 @@ trend_filtered_df = filtered_df[
 
 
 # ============================================================
-# 18-3. 추이 그래프
+# 21-3. 추이 그래프
 # ============================================================
 
 trend_tab1, trend_tab2, trend_tab3 = st.tabs(
@@ -1636,8 +1734,9 @@ with trend_tab3:
 
     draw_trend_chart("월별")
 
+
 # ============================================================
-# 21. 데이터 정보
+# 22. 데이터 정보
 # ============================================================
 
 st.divider()
@@ -1665,6 +1764,12 @@ with st.expander("📌 데이터 정보"):
     st.write(
         f"선택 카테고리: "
         f"{len(selected_type)}개"
+    )
+
+
+    st.write(
+        f"선택 기기: "
+        f"{len(selected_device)}개"
     )
 
 
