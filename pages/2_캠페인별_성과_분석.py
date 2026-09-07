@@ -47,8 +47,8 @@ st.caption(
 # 3. Google Sheets 설정
 # ============================================================
 
-SHEET_ID = "1M_NGYvpXgY721bV-B0dgXOj5LmITfKoVTIoIJgmv6gk"
-GID = "519342112"
+SHEET_ID = "161bKPiv4X1mxBBg1JOD7Q_Ra4DED-LZ3mpatD9xrc3w"
+GID = "0"
 
 SHEET_URL = (
     f"https://docs.google.com/spreadsheets/d/"
