@@ -783,14 +783,11 @@ with col3:
 
 
 # ============================================================
-# 8. 종속형 필터
+# 8. 종속 필터
 # ============================================================
 
-st.markdown("### 🎯 분석 대상")
-
-
 # ------------------------------------------------------------
-# 전체 카테고리
+# 8-1. 카테고리
 # ------------------------------------------------------------
 
 category_options = sorted(
@@ -800,29 +797,16 @@ category_options = sorted(
     .tolist()
 )
 
-
-# ------------------------------------------------------------
-# 카테고리 선택
-# ------------------------------------------------------------
-
-if "category_filter" not in st.session_state:
-
-    st.session_state["category_filter"] = category_options
+if not category_options:
+    st.warning("선택 가능한 카테고리가 없습니다.")
+    st.stop()
 
 
-valid_categories = [
-    value
-    for value in st.session_state["category_filter"]
-    if value in category_options
-]
-
-
-if not valid_categories and category_options:
-
-    valid_categories = category_options
-
-
-st.session_state["category_filter"] = valid_categories
+# 이전 카테고리 선택값 확인
+previous_categories = st.session_state.get(
+    "_previous_categories",
+    None
+)
 
 
 filter_col1, filter_col2, filter_col3 = st.columns(
@@ -835,137 +819,173 @@ with filter_col1:
     selected_categories = st.multiselect(
         "카테고리",
         options=category_options,
+        default=(
+            st.session_state.get(
+                "category_filter",
+                category_options
+            )
+        ),
         key="category_filter"
     )
 
 
 # ------------------------------------------------------------
-# 카테고리 → 매체
+# 8-2. 카테고리에 종속된 매체 목록
 # ------------------------------------------------------------
 
-if selected_categories:
+media_source_df = df[
+    df["category"].isin(
+        selected_categories
+    )
+].copy()
 
-    media_options = sorted(
-        df.loc[
-            df["category"].isin(selected_categories),
-            "media"
-        ]
-        .dropna()
-        .unique()
-        .tolist()
+
+media_options = sorted(
+    media_source_df["media"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+# ------------------------------------------------------------
+# 카테고리가 변경되었는지 확인
+# ------------------------------------------------------------
+
+category_changed = (
+    previous_categories is not None
+    and set(previous_categories)
+    != set(selected_categories)
+)
+
+
+# ------------------------------------------------------------
+# 기존 매체 선택값 보정
+# ------------------------------------------------------------
+
+current_media_selection = st.session_state.get(
+    "media_filter",
+    None
+)
+
+
+if category_changed:
+
+    # 카테고리가 바뀌면
+    # 해당 카테고리에서 사용할 수 있는 매체를 전체 선택
+    st.session_state["media_filter"] = (
+        media_options.copy()
     )
 
 else:
 
-    media_options = []
+    if current_media_selection is None:
 
+        # 최초 실행
+        st.session_state["media_filter"] = (
+            media_options.copy()
+        )
 
-# 기존 매체 선택값 중 현재 카테고리에 존재하는 것만 유지
-if "media_filter" not in st.session_state:
+    else:
 
-    st.session_state["media_filter"] = media_options
-
-else:
-
-    valid_media_selection = [
-        media
-        for media in st.session_state["media_filter"]
-        if media in media_options
-    ]
-
-    if not valid_media_selection and media_options:
-
-        valid_media_selection = media_options
-
-    st.session_state["media_filter"] = valid_media_selection
+        # 현재 카테고리에서 존재하는 매체만 유지
+        st.session_state["media_filter"] = [
+            media
+            for media in current_media_selection
+            if media in media_options
+        ]
 
 
 with filter_col2:
 
     selected_media = st.multiselect(
-        "매체 선택",
+        "매체",
         options=media_options,
         key="media_filter"
     )
 
 
 # ------------------------------------------------------------
-# 카테고리 + 매체 → 캠페인
+# 8-3. 카테고리 + 매체에 종속된 캠페인 목록
 # ------------------------------------------------------------
 
-if selected_categories and selected_media:
+campaign_source_df = df[
+    df["category"].isin(
+        selected_categories
+    )
+    &
+    df["media"].isin(
+        selected_media
+    )
+].copy()
 
-    campaign_options = sorted(
-        df.loc[
-            df["category"].isin(selected_categories)
-            &
-            df["media"].isin(selected_media),
-            "campaign"
-        ]
-        .dropna()
-        .unique()
-        .tolist()
+
+campaign_options = sorted(
+    campaign_source_df["campaign"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+# ------------------------------------------------------------
+# 기존 캠페인 선택값 보정
+# ------------------------------------------------------------
+
+current_campaign_selection = st.session_state.get(
+    "campaign_filter",
+    None
+)
+
+
+if category_changed:
+
+    # 카테고리가 변경되면
+    # 새롭게 연결된 캠페인을 전체 선택
+    st.session_state["campaign_filter"] = (
+        campaign_options.copy()
     )
 
 else:
 
-    campaign_options = []
+    if current_campaign_selection is None:
 
+        # 최초 실행
+        st.session_state["campaign_filter"] = (
+            campaign_options.copy()
+        )
 
-# 기존 캠페인 선택값 중 현재 조건에 존재하는 것만 유지
-if "campaign_filter" not in st.session_state:
+    else:
 
-    st.session_state["campaign_filter"] = campaign_options
-
-else:
-
-    valid_campaign_selection = [
-        campaign
-        for campaign in st.session_state["campaign_filter"]
-        if campaign in campaign_options
-    ]
-
-    if not valid_campaign_selection and campaign_options:
-
-        valid_campaign_selection = campaign_options
-
-    st.session_state["campaign_filter"] = valid_campaign_selection
+        # 현재 카테고리 + 매체에서 존재하는
+        # 캠페인만 유지
+        st.session_state["campaign_filter"] = [
+            campaign
+            for campaign in current_campaign_selection
+            if campaign in campaign_options
+        ]
 
 
 with filter_col3:
 
     selected_campaigns = st.multiselect(
-        "캠페인 선택",
+        "캠페인",
         options=campaign_options,
         key="campaign_filter"
     )
 
 
-# ============================================================
-# 종속 필터 안내
-# ============================================================
+# ------------------------------------------------------------
+# 현재 선택값 저장
+# ------------------------------------------------------------
 
-if not selected_categories:
-
-    st.info(
-        "카테고리를 선택해주세요."
-    )
-
-elif not selected_media:
-
-    st.info(
-        "선택한 카테고리에 해당하는 매체를 선택해주세요."
-    )
-
-elif not selected_campaigns:
-
-    st.info(
-        "선택한 카테고리와 매체에 해당하는 캠페인을 선택해주세요."
-    )
+st.session_state["_previous_categories"] = (
+    selected_categories.copy()
+)
 
 
 # ============================================================
-# 전체 선택 버튼
+# 8-4. 전체 선택 버튼
 # ============================================================
 
 button_col1, button_col2, button_col3 = st.columns(3)
@@ -982,9 +1002,13 @@ with button_col1:
             "category_filter"
         ] = category_options
 
-        # 카테고리 전체 → 매체 전체
+        # 전체 카테고리에 연결된 매체
         all_media = sorted(
-            df["media"]
+            df[
+                df["category"].isin(
+                    category_options
+                )
+            ]["media"]
             .dropna()
             .unique()
             .tolist()
@@ -994,9 +1018,13 @@ with button_col1:
             "media_filter"
         ] = all_media
 
-        # 전체 → 캠페인 전체
+        # 전체 카테고리에 연결된 캠페인
         all_campaigns = sorted(
-            df["campaign"]
+            df[
+                df["category"].isin(
+                    category_options
+                )
+            ]["campaign"]
             .dropna()
             .unique()
             .tolist()
@@ -1005,6 +1033,10 @@ with button_col1:
         st.session_state[
             "campaign_filter"
         ] = all_campaigns
+
+        st.session_state[
+            "_previous_categories"
+        ] = category_options
 
         st.rerun()
 
@@ -1016,28 +1048,41 @@ with button_col2:
         use_container_width=True
     ):
 
+        # 현재 선택된 카테고리 안에서만 전체 선택
+        current_media_options = sorted(
+            df[
+                df["category"].isin(
+                    selected_categories
+                )
+            ]["media"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
         st.session_state[
             "media_filter"
-        ] = media_options
+        ] = current_media_options
 
-        # 현재 카테고리 + 전체 매체 기준 캠페인
-        if selected_categories:
+        # 선택된 매체에 연결된 캠페인도 전체 선택
+        current_campaign_options = sorted(
+            df[
+                df["category"].isin(
+                    selected_categories
+                )
+                &
+                df["media"].isin(
+                    current_media_options
+                )
+            ]["campaign"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
 
-            current_campaigns = sorted(
-                df.loc[
-                    df["category"].isin(selected_categories)
-                    &
-                    df["media"].isin(media_options),
-                    "campaign"
-                ]
-                .dropna()
-                .unique()
-                .tolist()
-            )
-
-            st.session_state[
-                "campaign_filter"
-            ] = current_campaigns
+        st.session_state[
+            "campaign_filter"
+        ] = current_campaign_options
 
         st.rerun()
 
@@ -1049,9 +1094,26 @@ with button_col3:
         use_container_width=True
     ):
 
+        # 현재 선택된 카테고리 + 매체 안에서
+        # 캠페인 전체 선택
+        current_campaign_options = sorted(
+            df[
+                df["category"].isin(
+                    selected_categories
+                )
+                &
+                df["media"].isin(
+                    selected_media
+                )
+            ]["campaign"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
         st.session_state[
             "campaign_filter"
-        ] = campaign_options
+        ] = current_campaign_options
 
         st.rerun()
 
@@ -1061,13 +1123,18 @@ with button_col3:
 # ============================================================
 
 filtered_df = df[
-    df["category"].isin(selected_categories)
+    df["category"].isin(
+        selected_categories
+    )
     &
-    df["media"].isin(selected_media)
+    df["media"].isin(
+        selected_media
+    )
     &
-    df["campaign"].isin(selected_campaigns)
+    df["campaign"].isin(
+        selected_campaigns
+    )
 ].copy()
-
 
 # ============================================================
 # 10. 성과 집계
