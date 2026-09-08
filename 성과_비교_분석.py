@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from datetime import timedelta
 import calendar
 import html
+from openai import OpenAI
 
 
 # ============================================================
@@ -38,7 +39,8 @@ SHEET_URL = (
 st.title("📈 성과 비교 분석")
 
 st.caption(
-    "선택한 카테고리 / 매체 / 캠페인 기준으로 현재 기간과 비교 기간의 성과를 확인합니다."
+    "선택한 카테고리 / 매체 / 캠페인 기준으로 "
+    "현재 기간과 비교 기간의 성과를 확인합니다."
 )
 
 
@@ -80,7 +82,6 @@ def load_data():
                     ==
                     str(candidate).strip().lower()
                 ):
-
                     return col
 
 
@@ -94,7 +95,6 @@ def load_data():
                     in
                     str(col).strip().lower()
                 ):
-
                     return col
 
 
@@ -106,6 +106,7 @@ def load_data():
         "날짜"
     ])
 
+
     category_col = find_column([
         "type",
         "TYPE",
@@ -115,11 +116,13 @@ def load_data():
         "category"
     ])
 
+
     media_col = find_column([
         "media",
         "MEDIA",
         "매체"
     ])
+
 
     campaign_col = find_column([
         "campaign",
@@ -127,21 +130,25 @@ def load_data():
         "캠페인"
     ])
 
+
     impress_col = find_column([
         "impress",
         "impression",
         "노출"
     ])
 
+
     click_col = find_column([
         "click",
         "클릭"
     ])
 
+
     spend_col = find_column([
         "spend",
         "광고비"
     ])
+
 
     conversion_col = find_column([
         "conversion",
@@ -554,6 +561,15 @@ available_dates = sorted(
 )
 
 
+if not available_dates:
+
+    st.warning(
+        "분석 가능한 날짜 데이터가 없습니다."
+    )
+
+    st.stop()
+
+
 min_date = pd.Timestamp(
     min(available_dates)
 ).date()
@@ -579,7 +595,8 @@ with col1:
         "기준일",
         value=max_date,
         min_value=min_date,
-        max_value=max_date
+        max_value=max_date,
+        key="base_date"
     )
 
 
@@ -597,7 +614,8 @@ with col2:
             "전월",
             "지정"
         ],
-        horizontal=True
+        horizontal=True,
+        key="period_type"
     )
 
 
@@ -765,8 +783,15 @@ with col3:
 
 
 # ============================================================
-# 8. 필터
+# 8. 종속형 필터
 # ============================================================
+
+st.markdown("### 🎯 분석 대상")
+
+
+# ------------------------------------------------------------
+# 전체 카테고리
+# ------------------------------------------------------------
 
 category_options = sorted(
     df["category"]
@@ -776,20 +801,28 @@ category_options = sorted(
 )
 
 
-media_options = sorted(
-    df["media"]
-    .dropna()
-    .unique()
-    .tolist()
-)
+# ------------------------------------------------------------
+# 카테고리 선택
+# ------------------------------------------------------------
+
+if "category_filter" not in st.session_state:
+
+    st.session_state["category_filter"] = category_options
 
 
-campaign_options = sorted(
-    df["campaign"]
-    .dropna()
-    .unique()
-    .tolist()
-)
+valid_categories = [
+    value
+    for value in st.session_state["category_filter"]
+    if value in category_options
+]
+
+
+if not valid_categories and category_options:
+
+    valid_categories = category_options
+
+
+st.session_state["category_filter"] = valid_categories
 
 
 filter_col1, filter_col2, filter_col3 = st.columns(
@@ -802,9 +835,49 @@ with filter_col1:
     selected_categories = st.multiselect(
         "카테고리",
         options=category_options,
-        default=category_options,
         key="category_filter"
     )
+
+
+# ------------------------------------------------------------
+# 카테고리 → 매체
+# ------------------------------------------------------------
+
+if selected_categories:
+
+    media_options = sorted(
+        df.loc[
+            df["category"].isin(selected_categories),
+            "media"
+        ]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+
+else:
+
+    media_options = []
+
+
+# 기존 매체 선택값 중 현재 카테고리에 존재하는 것만 유지
+if "media_filter" not in st.session_state:
+
+    st.session_state["media_filter"] = media_options
+
+else:
+
+    valid_media_selection = [
+        media
+        for media in st.session_state["media_filter"]
+        if media in media_options
+    ]
+
+    if not valid_media_selection and media_options:
+
+        valid_media_selection = media_options
+
+    st.session_state["media_filter"] = valid_media_selection
 
 
 with filter_col2:
@@ -812,9 +885,51 @@ with filter_col2:
     selected_media = st.multiselect(
         "매체 선택",
         options=media_options,
-        default=media_options,
         key="media_filter"
     )
+
+
+# ------------------------------------------------------------
+# 카테고리 + 매체 → 캠페인
+# ------------------------------------------------------------
+
+if selected_categories and selected_media:
+
+    campaign_options = sorted(
+        df.loc[
+            df["category"].isin(selected_categories)
+            &
+            df["media"].isin(selected_media),
+            "campaign"
+        ]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+
+else:
+
+    campaign_options = []
+
+
+# 기존 캠페인 선택값 중 현재 조건에 존재하는 것만 유지
+if "campaign_filter" not in st.session_state:
+
+    st.session_state["campaign_filter"] = campaign_options
+
+else:
+
+    valid_campaign_selection = [
+        campaign
+        for campaign in st.session_state["campaign_filter"]
+        if campaign in campaign_options
+    ]
+
+    if not valid_campaign_selection and campaign_options:
+
+        valid_campaign_selection = campaign_options
+
+    st.session_state["campaign_filter"] = valid_campaign_selection
 
 
 with filter_col3:
@@ -822,13 +937,35 @@ with filter_col3:
     selected_campaigns = st.multiselect(
         "캠페인 선택",
         options=campaign_options,
-        default=campaign_options,
         key="campaign_filter"
     )
 
 
 # ============================================================
-# 전체 선택
+# 종속 필터 안내
+# ============================================================
+
+if not selected_categories:
+
+    st.info(
+        "카테고리를 선택해주세요."
+    )
+
+elif not selected_media:
+
+    st.info(
+        "선택한 카테고리에 해당하는 매체를 선택해주세요."
+    )
+
+elif not selected_campaigns:
+
+    st.info(
+        "선택한 카테고리와 매체에 해당하는 캠페인을 선택해주세요."
+    )
+
+
+# ============================================================
+# 전체 선택 버튼
 # ============================================================
 
 button_col1, button_col2, button_col3 = st.columns(3)
@@ -845,6 +982,30 @@ with button_col1:
             "category_filter"
         ] = category_options
 
+        # 카테고리 전체 → 매체 전체
+        all_media = sorted(
+            df["media"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
+        st.session_state[
+            "media_filter"
+        ] = all_media
+
+        # 전체 → 캠페인 전체
+        all_campaigns = sorted(
+            df["campaign"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
+        st.session_state[
+            "campaign_filter"
+        ] = all_campaigns
+
         st.rerun()
 
 
@@ -858,6 +1019,25 @@ with button_col2:
         st.session_state[
             "media_filter"
         ] = media_options
+
+        # 현재 카테고리 + 전체 매체 기준 캠페인
+        if selected_categories:
+
+            current_campaigns = sorted(
+                df.loc[
+                    df["category"].isin(selected_categories)
+                    &
+                    df["media"].isin(media_options),
+                    "campaign"
+                ]
+                .dropna()
+                .unique()
+                .tolist()
+            )
+
+            st.session_state[
+                "campaign_filter"
+            ] = current_campaigns
 
         st.rerun()
 
@@ -1285,7 +1465,6 @@ def create_comparison(
 
 
     if result.empty:
-
         return result
 
 
@@ -1501,7 +1680,6 @@ with summary_col4:
             else "-"
         )
     )
-
 
 
 # ============================================================
@@ -2009,9 +2187,6 @@ else:
     """
 
 
-    # 핵심 수정:
-    # st.markdown이 아니라 st.html 사용
-    # -> <td>, <div>가 코드로 노출되는 문제 방지
     st.html(table_html)
 
 
@@ -2047,10 +2222,6 @@ else:
         )
 
     else:
-
-        # ----------------------------------------------------
-        # 전체 성과 흐름
-        # ----------------------------------------------------
 
         st.markdown(
             f"""
@@ -2181,6 +2352,7 @@ CPA **{best_cpa_media['CPA_current']:,.0f}원**,
                 "CVR_change"
             ]
 
+
             share = (
                 conversion /
                 current_total_conversion *
@@ -2189,10 +2361,6 @@ CPA **{best_cpa_media['CPA_current']:,.0f}원**,
                 else np.nan
             )
 
-
-            # ------------------------------------------------
-            # 기본 성과
-            # ------------------------------------------------
 
             comment_parts = []
 
@@ -2397,7 +2565,8 @@ st.divider()
 st.header("🔍 캠페인별 상세 성과 비교")
 
 st.caption(
-    "선택한 카테고리 / 매체 / 캠페인 조건 안에서 캠페인별 상세 성과를 비교합니다."
+    "선택한 카테고리 / 매체 / 캠페인 조건 안에서 "
+    "캠페인별 상세 성과를 비교합니다."
 )
 
 
@@ -2593,8 +2762,6 @@ else:
     """
 
 
-    # 핵심 수정:
-    # HTML이 코드로 표시되지 않도록 st.html 사용
     st.html(campaign_html)
 
 
@@ -2658,7 +2825,9 @@ else:
         cpa_valid = valid_campaigns[
             valid_campaigns["CPA_current"].notna()
             &
-            (valid_campaigns["CPA_current"] > 0)
+            (
+                valid_campaigns["CPA_current"] > 0
+            )
         ].copy()
 
 
@@ -2878,7 +3047,9 @@ CPA **{worst['CPA_change']:+,.1f}%** 상승,
             ]
 
 
-            if best_cvr["CVR_change"] > 10:
+            if best_cvr[
+                "CVR_change"
+            ] > 10:
 
                 st.markdown(
                     f"""
@@ -2935,6 +3106,7 @@ CVR **{best_cvr['CVR_change']:+,.1f}%** 개선,
                 "CVR_change"
             ]
 
+
             share = (
                 conversion /
                 current_campaign_total *
@@ -2944,11 +3116,8 @@ CVR **{best_cvr['CVR_change']:+,.1f}%** 개선,
             )
 
 
-            # ------------------------------------------------
-            # 기본 성과
-            # ------------------------------------------------
-
             details = []
+
 
             details.append(
                 f"현재 전환 {conversion:,.0f}건으로 "
@@ -3170,7 +3339,380 @@ CVR **{best_cvr['CVR_change']:+,.1f}%** 개선,
 
 
 # ============================================================
-# 21. 데이터 정보
+# 21. NVIDIA AI 분석
+# ============================================================
+
+st.divider()
+
+st.header("🤖 AI 성과 분석")
+
+st.caption(
+    "현재 선택한 카테고리 / 매체 / 캠페인 / 분석기간의 "
+    "성과 데이터를 NVIDIA AI가 분석합니다."
+)
+
+
+# ------------------------------------------------------------
+# AI 분석용 데이터 생성
+# ------------------------------------------------------------
+
+def make_ai_data():
+
+    lines = []
+
+    lines.append(
+        f"분석 기간: {current_period_text}"
+    )
+
+    lines.append(
+        f"비교 기간: {previous_period_text}"
+    )
+
+    lines.append(
+        f"카테고리: {', '.join(selected_categories)}"
+    )
+
+    lines.append(
+        f"매체: {', '.join(selected_media)}"
+    )
+
+    lines.append(
+        f"캠페인 수: {len(selected_campaigns)}개"
+    )
+
+    lines.append("")
+
+    lines.append("=== 전체 성과 ===")
+
+    lines.append(
+        f"광고비: {total_current_spend:,.0f}원"
+    )
+
+    lines.append(
+        f"전환: {total_current_conversion:,.0f}건"
+    )
+
+    lines.append(
+        f"CPA: {fmt_money(total_current_cpa)}"
+    )
+
+    lines.append(
+        f"CVR: {fmt_percent(total_current_cvr)}"
+    )
+
+    lines.append(
+        f"광고비 변화: {fmt_change(total_spend_change)}"
+    )
+
+    lines.append(
+        f"전환 변화: {fmt_change(total_conversion_change)}"
+    )
+
+    lines.append(
+        f"CPA 변화: {fmt_change(total_cpa_change)}"
+    )
+
+    lines.append(
+        f"CVR 변화: {fmt_change(total_cvr_change)}"
+    )
+
+    lines.append("")
+
+    # --------------------------------------------------------
+    # 매체 데이터
+    # --------------------------------------------------------
+
+    lines.append("=== 매체별 성과 ===")
+
+    for _, row in media_table.iterrows():
+
+        lines.append(
+            f"""
+매체: {row['media']}
+광고비: {row['spend_current']:,.0f}원
+전환: {row['conversion_current']:,.0f}건
+CPA: {fmt_money(row['CPA_current'])}
+CVR: {fmt_percent(row['CVR_current'])}
+광고비 변화: {fmt_change(row['spend_change'])}
+전환 변화: {fmt_change(row['conversion_change'])}
+CPA 변화: {fmt_change(row['CPA_change'])}
+CVR 변화: {fmt_change(row['CVR_change'])}
+"""
+        )
+
+
+    lines.append("")
+
+    # --------------------------------------------------------
+    # 캠페인 데이터
+    # --------------------------------------------------------
+
+    lines.append("=== 캠페인별 성과 ===")
+
+    for _, row in campaign_table.iterrows():
+
+        lines.append(
+            f"""
+캠페인: {row['campaign']}
+광고비: {row['spend_current']:,.0f}원
+전환: {row['conversion_current']:,.0f}건
+CPA: {fmt_money(row['CPA_current'])}
+CVR: {fmt_percent(row['CVR_current'])}
+광고비 변화: {fmt_change(row['spend_change'])}
+전환 변화: {fmt_change(row['conversion_change'])}
+CPA 변화: {fmt_change(row['CPA_change'])}
+CVR 변화: {fmt_change(row['CVR_change'])}
+"""
+        )
+
+
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------
+# AI 분석 실행
+# ------------------------------------------------------------
+
+if (
+    not selected_categories
+    or not selected_media
+    or not selected_campaigns
+):
+
+    st.info(
+        "카테고리 → 매체 → 캠페인을 선택한 후 "
+        "AI 분석을 실행할 수 있습니다."
+    )
+
+else:
+
+    ai_button_col1, ai_button_col2 = st.columns(
+        [1, 4]
+    )
+
+
+    with ai_button_col1:
+
+        run_ai = st.button(
+            "✨ AI 분석 실행",
+            type="primary",
+            use_container_width=True
+        )
+
+
+    with ai_button_col2:
+
+        st.caption(
+            "※ 버튼을 눌렀을 때만 NVIDIA API가 호출됩니다."
+        )
+
+
+    # --------------------------------------------------------
+    # 필터 변경 시 이전 AI 결과 제거
+    # --------------------------------------------------------
+
+    current_ai_signature = (
+        tuple(selected_categories),
+        tuple(selected_media),
+        tuple(selected_campaigns),
+        str(current_start),
+        str(current_end),
+        str(previous_start),
+        str(previous_end)
+    )
+
+
+    if (
+        "ai_signature" not in st.session_state
+        or
+        st.session_state["ai_signature"]
+        != current_ai_signature
+    ):
+
+        st.session_state["ai_result"] = None
+
+        st.session_state[
+            "ai_signature"
+        ] = current_ai_signature
+
+
+    # --------------------------------------------------------
+    # 버튼 클릭
+    # --------------------------------------------------------
+
+    if run_ai:
+
+        try:
+
+            # --------------------------------------------
+            # NVIDIA API Key
+            # --------------------------------------------
+
+            NVIDIA_API_KEY = st.secrets[
+                "NVIDIA_API_KEY"
+            ]
+
+
+            # --------------------------------------------
+            # NVIDIA Client
+            # --------------------------------------------
+
+            client = OpenAI(
+                base_url="https://integrate.api.nvidia.com/v1",
+                api_key=NVIDIA_API_KEY
+            )
+
+
+            # --------------------------------------------
+            # AI 데이터
+            # --------------------------------------------
+
+            data_for_ai = make_ai_data()
+
+
+            # --------------------------------------------
+            # Prompt
+            # --------------------------------------------
+
+            prompt = f"""
+너는 10년차 퍼포먼스 마케팅 전문가다.
+
+아래 광고 성과 데이터를 분석해줘.
+
+{data_for_ai}
+
+단순히 데이터를 다시 설명하지 말고,
+퍼포먼스 마케팅 관점에서 성과의 원인과
+실행 가능한 최적화 액션을 제안해줘.
+
+반드시 다음 순서로 작성해줘.
+
+1. 📊 전체 성과 요약
+- 현재 성과에서 가장 중요한 특징
+- 비교 기간 대비 핵심 변화
+- 현재 성과에 대한 종합 판단
+
+2. 🏆 잘하고 있는 매체
+- 어떤 매체가 좋은지
+- 왜 좋은지
+- 예산 확대 가능 여부
+
+3. ⚠️ 개선이 필요한 매체
+- 어떤 매체가 문제인지
+- CPA / CVR / 전환 관점의 문제
+- 우선적으로 확인해야 할 부분
+
+4. 🎯 캠페인 분석
+- 우수 캠페인
+- 저효율 캠페인
+- CPA가 개선된 캠페인
+- CPA가 악화된 캠페인
+- 전환 규모가 큰 캠페인
+
+5. 💰 예산 운영 제안
+다음 중 하나로 캠페인을 구분해줘.
+
+- 예산 확대
+- 유지
+- 축소
+- 테스트 필요
+
+각 판단에 근거를 함께 설명해줘.
+
+6. 🚀 우선 실행 액션 TOP 3
+실무자가 바로 실행할 수 있도록
+구체적인 액션 3개를 제안해줘.
+
+주의사항:
+- CPA가 낮다는 이유만으로 무조건 예산 확대를 제안하지 말 것.
+- 전환수가 충분한지 함께 고려할 것.
+- CPA 상승과 전환 증가가 동시에 나타나는 경우에는
+  무조건 축소하지 말고 규모 확대에 따른 효율 변화를 고려할 것.
+- 데이터에 없는 원인을 사실처럼 단정하지 말 것.
+- 추정이 필요한 경우 "가능성이 있습니다"라고 표현할 것.
+- 숫자는 제공된 데이터를 그대로 사용할 것.
+- 답변은 한국어로 작성할 것.
+"""
+
+
+            # --------------------------------------------
+            # NVIDIA API 호출
+            # --------------------------------------------
+
+            with st.spinner(
+                "🤖 NVIDIA AI가 성과 데이터를 분석하고 있습니다..."
+            ):
+
+                response = client.chat.completions.create(
+
+                    model="openai/gpt-oss-20b",
+
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "너는 데이터 기반 퍼포먼스 "
+                                "마케팅 분석 전문가다."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+
+                    temperature=0.2,
+
+                    max_tokens=2500,
+
+                    stream=False
+                )
+
+
+            # --------------------------------------------
+            # 결과 저장
+            # --------------------------------------------
+
+            st.session_state[
+                "ai_result"
+            ] = response.choices[
+                0
+            ].message.content
+
+
+        except KeyError:
+
+            st.error(
+                "NVIDIA_API_KEY가 Streamlit Secrets에 없습니다."
+            )
+
+
+        except Exception as e:
+
+            st.error(
+                f"NVIDIA AI 분석 중 오류가 발생했습니다.\n\n{e}"
+            )
+
+
+    # --------------------------------------------------------
+    # AI 결과 출력
+    # --------------------------------------------------------
+
+    if st.session_state.get(
+        "ai_result"
+    ):
+
+        st.markdown("### 🤖 NVIDIA AI 분석 결과")
+
+        st.markdown(
+            st.session_state[
+                "ai_result"
+            ]
+        )
+
+
+# ============================================================
+# 22. 데이터 정보
 # ============================================================
 
 st.divider()
