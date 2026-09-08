@@ -650,6 +650,10 @@ with period_col2:
 st.markdown("### 🎯 필터 조건")
 
 
+# ============================================================
+# 1. 카테고리 목록
+# ============================================================
+
 type_options = sorted(
     df["type"]
     .dropna()
@@ -658,30 +662,22 @@ type_options = sorted(
 )
 
 
-device_options = sorted(
-    df["device"]
-    .dropna()
-    .unique()
-    .tolist()
-)
+if not type_options:
 
-
-media_options = sorted(
-    df["media"]
-    .dropna()
-    .unique()
-    .tolist()
-)
-
-
-filter_col1, filter_col2, filter_col3 = st.columns(
-    [1, 1, 2]
-)
+    st.warning("선택 가능한 카테고리가 없습니다.")
+    st.stop()
 
 
 # ============================================================
-# 카테고리
+# 2. 카테고리 선택
 # ============================================================
+
+with st.container():
+
+    filter_col1, filter_col2, filter_col3 = st.columns(
+        [1, 1, 2]
+    )
+
 
 with filter_col1:
 
@@ -694,7 +690,56 @@ with filter_col1:
 
 
 # ============================================================
-# 기기
+# 3. 카테고리에 종속된 기기 목록
+# ============================================================
+
+device_source_df = df[
+    df["type"].isin(selected_type)
+].copy()
+
+
+device_options = sorted(
+    device_source_df["device"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+# ============================================================
+# 4. 기존 기기 선택값 보정
+# ============================================================
+
+current_device = st.session_state.get(
+    "detail_device",
+    None
+)
+
+
+if current_device is None:
+
+    # 최초 실행
+    default_device = device_options.copy()
+
+else:
+
+    # 현재 선택된 카테고리에 존재하는 기기만 유지
+    default_device = [
+        device
+        for device in current_device
+        if device in device_options
+    ]
+
+
+# 기존 선택 기기가 하나도 남지 않는 경우
+# 현재 카테고리의 기기를 전체 선택
+if current_device is not None and not default_device:
+
+    default_device = device_options.copy()
+
+
+# ============================================================
+# 5. 기기 선택
 # ============================================================
 
 with filter_col2:
@@ -702,29 +747,67 @@ with filter_col2:
     selected_device = st.multiselect(
         "기기",
         options=device_options,
-        default=device_options,
+        default=default_device,
         key="detail_device"
     )
 
 
 # ============================================================
-# 매체
+# 6. 카테고리 + 기기에 종속된 매체 목록
+# ============================================================
+
+media_source_df = df[
+    df["type"].isin(selected_type)
+    &
+    df["device"].isin(selected_device)
+].copy()
+
+
+media_options = sorted(
+    media_source_df["media"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+# ============================================================
+# 7. 기존 매체 선택값 보정
+# ============================================================
+
+current_media = st.session_state.get(
+    "detail_media",
+    None
+)
+
+
+if current_media is None:
+
+    # 최초 실행
+    default_media = media_options.copy()
+
+else:
+
+    # 현재 카테고리 + 기기에 존재하는 매체만 유지
+    default_media = [
+        media
+        for media in current_media
+        if media in media_options
+    ]
+
+
+# 기존 선택 매체가 하나도 남지 않는 경우
+# 현재 조건의 매체를 전체 선택
+if current_media is not None and not default_media:
+
+    default_media = media_options.copy()
+
+
+# ============================================================
+# 8. 매체 선택
 # ============================================================
 
 with filter_col3:
-
-    if "media_filter" in st.session_state:
-
-        default_media = [
-            media
-            for media in st.session_state["media_filter"]
-            if media in media_options
-        ]
-
-    else:
-
-        default_media = media_options
-
 
     selected_media = st.multiselect(
         "매체 선택",
@@ -732,6 +815,48 @@ with filter_col3:
         default=default_media,
         key="detail_media"
     )
+
+
+# ============================================================
+# 9. 현재 선택 조건 표시
+# ============================================================
+
+st.caption(
+    f"카테고리 {len(selected_type)}개 · "
+    f"기기 {len(selected_device)}개 · "
+    f"매체 {len(selected_media)}개"
+)
+
+
+# ============================================================
+# 10. 선택 조건이 모두 비어 있는 경우
+# ============================================================
+
+if not selected_type:
+
+    st.info(
+        "카테고리를 하나 이상 선택해주세요."
+    )
+
+    st.stop()
+
+
+if not selected_device:
+
+    st.info(
+        "선택한 카테고리에 해당하는 기기를 하나 이상 선택해주세요."
+    )
+
+    st.stop()
+
+
+if not selected_media:
+
+    st.info(
+        "선택한 카테고리와 기기에 해당하는 매체를 하나 이상 선택해주세요."
+    )
+
+    st.stop()
 
 
 # ============================================================
@@ -762,7 +887,6 @@ filtered_df = df[
     &
     (df["media"].isin(selected_media))
 ].copy()
-
 
 # ============================================================
 # 9. 전체 성과 계산
