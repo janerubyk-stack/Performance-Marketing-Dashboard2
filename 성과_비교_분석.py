@@ -3403,8 +3403,6 @@ CVR **{best_cvr['CVR_change']:+,.1f}%** 개선,
 - **운영 제안:** {action}
 """
             )
-
-
 # ============================================================
 # 21. NVIDIA AI 분석
 # ============================================================
@@ -3414,44 +3412,14 @@ st.divider()
 st.header("🤖 AI 성과 분석")
 
 st.caption(
-    "현재 선택한 카테고리 / 매체 / 캠페인 / 분석기간의 "
-    "성과 데이터를 NVIDIA AI가 분석합니다."
+    "Python이 실제 성과 데이터를 기준으로 핵심 매체와 캠페인을 "
+    "선별하고, NVIDIA AI가 그 결과를 마케팅 관점에서 해석합니다."
 )
 
 
 # ============================================================
-# 21. NVIDIA AI 분석
+# 21-1. 안전한 숫자 포맷
 # ============================================================
-
-st.divider()
-
-st.header("🤖 AI 성과 분석")
-
-st.caption(
-    "현재 선택한 카테고리 / 매체 / 캠페인 / 분석기간의 "
-    "실제 Python 분석 결과를 기반으로 NVIDIA AI가 "
-    "성과 원인과 최적화 액션을 분석합니다."
-)
-
-
-# ============================================================
-# 21-1. AI 분석용 안전한 포맷 함수
-# ============================================================
-
-def ai_num(value, digits=0):
-
-    try:
-
-        if pd.isna(value):
-            return "-"
-
-        return f"{float(value):,.{digits}f}"
-
-    except:
-
-        return "-"
-
-
 
 def ai_money(value):
 
@@ -3461,6 +3429,21 @@ def ai_money(value):
             return "-"
 
         return f"{float(value):,.0f}원"
+
+    except:
+
+        return "-"
+
+
+
+def ai_number(value):
+
+    try:
+
+        if pd.isna(value):
+            return "-"
+
+        return f"{float(value):,.0f}"
 
     except:
 
@@ -3504,69 +3487,45 @@ def ai_change(value):
 
 
 # ============================================================
-# 21-2. Python이 확정한 전체 성과 데이터
+# 21-2. Python에서 매체 분석
 # ============================================================
 
-def make_overall_ai_data():
+def build_media_ai_facts():
 
-    return f"""
-[전체 성과]
-
-분석 기간: {current_period_text}
-비교 기간: {previous_period_text}
-
-광고비: {ai_money(total_current_spend)}
-전환: {ai_num(total_current_conversion)}건
-CPA: {ai_money(total_current_cpa)}
-CVR: {ai_percent(total_current_cvr)}
-
-광고비 변화: {ai_change(total_spend_change)}
-전환 변화: {ai_change(total_conversion_change)}
-CPA 변화: {ai_change(total_cpa_change)}
-CVR 변화: {ai_change(total_cvr_change)}
-"""
+    temp = media_table.copy()
 
 
+    # 숫자형 변환
 
-# ============================================================
-# 21-3. Python이 확정한 매체 데이터
-#
-# 중요:
-# AI가 매체를 직접 선정하지 않음.
-# Python에서 실제 데이터를 그대로 전달.
-# ============================================================
+    numeric_cols = [
+        "spend_current",
+        "conversion_current",
+        "CPA_current",
+        "CVR_current",
+        "spend_change",
+        "conversion_change",
+        "CPA_change",
+        "CVR_change"
+    ]
 
-def make_media_ai_data():
+    for col in numeric_cols:
 
-    media_df = media_table.copy()
+        if col in temp.columns:
+
+            temp[col] = pd.to_numeric(
+                temp[col],
+                errors="coerce"
+            )
 
 
     # --------------------------------------------------------
-    # 데이터 정렬
+    # 전환 규모가 충분한 매체
     # --------------------------------------------------------
 
-    media_df["conversion_current"] = pd.to_numeric(
-        media_df["conversion_current"],
-        errors="coerce"
-    )
-
-    media_df["CPA_current"] = pd.to_numeric(
-        media_df["CPA_current"],
-        errors="coerce"
-    )
-
-    media_df["CVR_current"] = pd.to_numeric(
-        media_df["CVR_current"],
-        errors="coerce"
-    )
-
-
-    # --------------------------------------------------------
-    # 전환 규모 기준 TOP
-    # --------------------------------------------------------
-
-    media_by_conversion = (
-        media_df
+    conversion_top = (
+        temp[
+            temp["conversion_current"] > 0
+        ]
         .sort_values(
             "conversion_current",
             ascending=False
@@ -3576,19 +3535,17 @@ def make_media_ai_data():
 
 
     # --------------------------------------------------------
-    # CPA 기준 TOP
+    # CPA 우수 매체
     #
-    # 전환 0 / CPA 0 제외
+    # 전환 0인 매체는 제외
     # --------------------------------------------------------
 
-    valid_cpa = media_df[
-        (media_df["conversion_current"] > 0)
-        &
-        (media_df["CPA_current"] > 0)
-    ]
-
-    media_by_cpa = (
-        valid_cpa
+    cpa_top = (
+        temp[
+            (temp["conversion_current"] > 0)
+            &
+            (temp["CPA_current"] > 0)
+        ]
         .sort_values(
             "CPA_current",
             ascending=True
@@ -3598,12 +3555,15 @@ def make_media_ai_data():
 
 
     # --------------------------------------------------------
-    # CPA 악화 TOP
+    # 개선 필요 매체
+    #
+    # CPA 상승
     # --------------------------------------------------------
 
-    media_by_cpa_worse = (
-        media_df
-        .dropna(subset=["CPA_change"])
+    cpa_worst = (
+        temp[
+            temp["CPA_change"].notna()
+        ]
         .sort_values(
             "CPA_change",
             ascending=False
@@ -3613,12 +3573,15 @@ def make_media_ai_data():
 
 
     # --------------------------------------------------------
-    # 전환 감소 TOP
+    # 개선 필요 매체
+    #
+    # 전환 감소
     # --------------------------------------------------------
 
-    media_by_conversion_worse = (
-        media_df
-        .dropna(subset=["conversion_change"])
+    conversion_worst = (
+        temp[
+            temp["conversion_change"].notna()
+        ]
         .sort_values(
             "conversion_change",
             ascending=True
@@ -3628,30 +3591,23 @@ def make_media_ai_data():
 
 
     # --------------------------------------------------------
-    # 실제 전체 매체 데이터
+    # AI에 전달할 핵심 매체 데이터
     # --------------------------------------------------------
 
     lines = []
 
-    lines.append("========================================")
-    lines.append("MEDIA_DATA")
-    lines.append("========================================")
-
     lines.append(
-        f"분석 대상 매체 수: {len(media_df)}개"
+        "===== 매체별 실제 성과 ====="
     )
 
-    lines.append("")
 
-
-    for _, row in media_df.iterrows():
+    for _, row in temp.iterrows():
 
         lines.append(
             f"""
-[매체]
 매체명: {row["media"]}
 광고비: {ai_money(row["spend_current"])}
-전환: {ai_num(row["conversion_current"])}건
+전환: {ai_number(row["conversion_current"])}건
 CPA: {ai_money(row["CPA_current"])}
 CVR: {ai_percent(row["CVR_current"])}
 광고비 변화: {ai_change(row["spend_change"])}
@@ -3662,93 +3618,94 @@ CVR 변화: {ai_change(row["CVR_change"])}
         )
 
 
-    # --------------------------------------------------------
-    # Python 판단 결과
-    # --------------------------------------------------------
-
-    lines.append("")
-    lines.append("========================================")
-    lines.append("PYTHON_MEDIA_FACTS")
-    lines.append("========================================")
-
-
     lines.append(
-        "\n[전환수 상위 매체]"
+        "===== Python이 선정한 전환 상위 매체 ====="
     )
 
-    for _, row in media_by_conversion.iterrows():
+
+    for _, row in conversion_top.iterrows():
 
         lines.append(
-            f"- {row['media']} / "
-            f"전환 {ai_num(row['conversion_current'])}건 / "
-            f"CPA {ai_money(row['CPA_current'])} / "
-            f"CVR {ai_percent(row['CVR_current'])}"
+            f"""
+{row["media"]}
+전환 {ai_number(row["conversion_current"])}건
+CPA {ai_money(row["CPA_current"])}
+CVR {ai_percent(row["CVR_current"])}
+"""
         )
 
 
     lines.append(
-        "\n[CPA 우수 매체]"
+        "===== Python이 선정한 CPA 우수 매체 ====="
     )
 
-    for _, row in media_by_cpa.iterrows():
+
+    for _, row in cpa_top.iterrows():
 
         lines.append(
-            f"- {row['media']} / "
-            f"CPA {ai_money(row['CPA_current'])} / "
-            f"전환 {ai_num(row['conversion_current'])}건 / "
-            f"CVR {ai_percent(row['CVR_current'])}"
+            f"""
+{row["media"]}
+CPA {ai_money(row["CPA_current"])}
+전환 {ai_number(row["conversion_current"])}건
+CVR {ai_percent(row["CVR_current"])}
+"""
         )
 
 
     lines.append(
-        "\n[CPA 악화가 큰 매체]"
+        "===== Python이 선정한 CPA 악화 매체 ====="
     )
 
-    for _, row in media_by_cpa_worse.iterrows():
+
+    for _, row in cpa_worst.iterrows():
 
         lines.append(
-            f"- {row['media']} / "
-            f"CPA 변화 {ai_change(row['CPA_change'])} / "
-            f"현재 CPA {ai_money(row['CPA_current'])} / "
-            f"전환 {ai_num(row['conversion_current'])}건"
+            f"""
+{row["media"]}
+CPA 변화 {ai_change(row["CPA_change"])}
+현재 CPA {ai_money(row["CPA_current"])}
+전환 {ai_number(row["conversion_current"])}건
+"""
         )
 
 
     lines.append(
-        "\n[전환 감소가 큰 매체]"
+        "===== Python이 선정한 전환 감소 매체 ====="
     )
 
-    for _, row in media_by_conversion_worse.iterrows():
+
+    for _, row in conversion_worst.iterrows():
 
         lines.append(
-            f"- {row['media']} / "
-            f"전환 변화 {ai_change(row['conversion_change'])} / "
-            f"현재 전환 {ai_num(row['conversion_current'])}건 / "
-            f"CPA {ai_money(row['CPA_current'])}"
+            f"""
+{row["media"]}
+전환 변화 {ai_change(row["conversion_change"])}
+현재 전환 {ai_number(row["conversion_current"])}건
+CPA {ai_money(row["CPA_current"])}
+"""
         )
 
 
-    return "\n".join(lines)
+    return (
+        "\n".join(lines),
+        conversion_top,
+        cpa_top,
+        cpa_worst,
+        conversion_worst
+    )
 
 
 
 # ============================================================
-# 21-4. Python이 확정한 캠페인 핵심 데이터
-#
-# 캠페인 전체를 AI에게 보내지 않고
-# 중요한 캠페인만 선별
+# 21-3. Python에서 캠페인 분석
 # ============================================================
 
-def make_campaign_ai_data():
+def build_campaign_ai_facts():
 
-    campaign_df = campaign_table.copy()
+    temp = campaign_table.copy()
 
 
-    # --------------------------------------------------------
-    # 숫자 변환
-    # --------------------------------------------------------
-
-    numeric_columns = [
+    numeric_cols = [
         "spend_current",
         "conversion_current",
         "CPA_current",
@@ -3760,157 +3717,125 @@ def make_campaign_ai_data():
     ]
 
 
-    for col in numeric_columns:
+    for col in numeric_cols:
 
-        if col in campaign_df.columns:
+        if col in temp.columns:
 
-            campaign_df[col] = pd.to_numeric(
-                campaign_df[col],
+            temp[col] = pd.to_numeric(
+                temp[col],
                 errors="coerce"
             )
 
 
     # --------------------------------------------------------
-    # 중요 캠페인 선별
+    # 전환 TOP 5
     # --------------------------------------------------------
 
-    important_indices = set()
-
-
-    # 전환 TOP 10
-
-    top_conversion = (
-        campaign_df
+    conversion_top = (
+        temp[
+            temp["conversion_current"] > 0
+        ]
         .sort_values(
             "conversion_current",
             ascending=False
         )
-        .head(10)
-    )
-
-    important_indices.update(
-        top_conversion.index.tolist()
+        .head(5)
     )
 
 
-    # CPA 우수 TOP 10
+    # --------------------------------------------------------
+    # CPA 우수 TOP 5
+    # --------------------------------------------------------
 
-    valid_cpa = campaign_df[
-        (campaign_df["conversion_current"] > 0)
-        &
-        (campaign_df["CPA_current"] > 0)
-    ]
-
-    best_cpa = (
-        valid_cpa
+    cpa_top = (
+        temp[
+            (temp["conversion_current"] > 0)
+            &
+            (temp["CPA_current"] > 0)
+        ]
         .sort_values(
             "CPA_current",
             ascending=True
         )
-        .head(10)
-    )
-
-    important_indices.update(
-        best_cpa.index.tolist()
+        .head(5)
     )
 
 
-    # CPA 악화 TOP 10
+    # --------------------------------------------------------
+    # CPA 악화 TOP 5
+    # --------------------------------------------------------
 
-    worst_cpa_change = (
-        campaign_df
-        .dropna(subset=["CPA_change"])
+    cpa_worst = (
+        temp[
+            temp["CPA_change"].notna()
+        ]
         .sort_values(
             "CPA_change",
             ascending=False
         )
-        .head(10)
-    )
-
-    important_indices.update(
-        worst_cpa_change.index.tolist()
+        .head(5)
     )
 
 
-    # 전환 감소 TOP 10
+    # --------------------------------------------------------
+    # 전환 감소 TOP 5
+    # --------------------------------------------------------
 
-    worst_conversion_change = (
-        campaign_df
-        .dropna(subset=["conversion_change"])
+    conversion_worst = (
+        temp[
+            temp["conversion_change"].notna()
+        ]
         .sort_values(
             "conversion_change",
             ascending=True
         )
-        .head(10)
-    )
-
-    important_indices.update(
-        worst_conversion_change.index.tolist()
+        .head(5)
     )
 
 
     # --------------------------------------------------------
-    # 최대 30개
-    # --------------------------------------------------------
-
-    if important_indices:
-
-        important_campaigns = campaign_df.loc[
-            list(important_indices)
-        ].copy()
-
-    else:
-
-        important_campaigns = (
-            campaign_df
-            .head(30)
-            .copy()
-        )
-
-
-    important_campaigns = (
-        important_campaigns
-        .head(30)
-    )
-
-
-    # --------------------------------------------------------
-    # AI 데이터 생성
+    # AI 전달 데이터
     # --------------------------------------------------------
 
     lines = []
 
-    lines.append(
-        "========================================"
-    )
 
     lines.append(
-        "CAMPAIGN_DATA"
+        "===== 캠페인 실제 성과 ====="
     )
 
-    lines.append(
-        "========================================"
-    )
 
-    lines.append(
-        f"전체 선택 캠페인 수: {len(campaign_df)}개"
-    )
+    # 핵심 캠페인만 전달
+    #
+    # 중복 제거
 
-    lines.append(
-        f"AI 전달 핵심 캠페인 수: {len(important_campaigns)}개"
-    )
+    selected_indexes = set()
 
-    lines.append("")
+
+    for df_temp in [
+        conversion_top,
+        cpa_top,
+        cpa_worst,
+        conversion_worst
+    ]:
+
+        selected_indexes.update(
+            df_temp.index.tolist()
+        )
+
+
+    important_campaigns = temp.loc[
+        list(selected_indexes)
+    ].copy()
 
 
     for _, row in important_campaigns.iterrows():
 
         lines.append(
             f"""
-[캠페인]
 캠페인명: {row["campaign"]}
 광고비: {ai_money(row["spend_current"])}
-전환: {ai_num(row["conversion_current"])}건
+전환: {ai_number(row["conversion_current"])}건
 CPA: {ai_money(row["CPA_current"])}
 CVR: {ai_percent(row["CVR_current"])}
 광고비 변화: {ai_change(row["spend_change"])}
@@ -3921,12 +3846,18 @@ CVR 변화: {ai_change(row["CVR_change"])}
         )
 
 
-    return "\n".join(lines)
+    return (
+        "\n".join(lines),
+        conversion_top,
+        cpa_top,
+        cpa_worst,
+        conversion_worst
+    )
 
 
 
 # ============================================================
-# 21-5. AI 실행 조건
+# 21-4. AI 실행
 # ============================================================
 
 if (
@@ -3942,29 +3873,11 @@ if (
 
 else:
 
-    ai_button_col1, ai_button_col2 = st.columns(
-        [1, 4]
+    run_ai = st.button(
+        "✨ AI 분석 실행",
+        type="primary",
+        use_container_width=True
     )
-
-
-    # --------------------------------------------------------
-    # AI 버튼
-    # --------------------------------------------------------
-
-    with ai_button_col1:
-
-        run_ai = st.button(
-            "✨ AI 분석 실행",
-            type="primary",
-            use_container_width=True
-        )
-
-
-    with ai_button_col2:
-
-        st.caption(
-            "※ 버튼을 눌렀을 때만 NVIDIA API가 호출됩니다."
-        )
 
 
     # ========================================================
@@ -3997,7 +3910,7 @@ else:
 
 
     # ========================================================
-    # AI 실행
+    # 버튼 클릭
     # ========================================================
 
     if run_ai:
@@ -4005,7 +3918,49 @@ else:
         try:
 
             # ------------------------------------------------
-            # NVIDIA API
+            # Python 분석
+            # ------------------------------------------------
+
+            (
+                media_ai_data,
+                media_conversion_top,
+                media_cpa_top,
+                media_cpa_worst,
+                media_conversion_worst
+            ) = build_media_ai_facts()
+
+
+            (
+                campaign_ai_data,
+                campaign_conversion_top,
+                campaign_cpa_top,
+                campaign_cpa_worst,
+                campaign_conversion_worst
+            ) = build_campaign_ai_facts()
+
+
+            # ------------------------------------------------
+            # 전체 성과
+            # ------------------------------------------------
+
+            overall_ai_data = f"""
+분석 기간: {current_period_text}
+비교 기간: {previous_period_text}
+
+광고비: {ai_money(total_current_spend)}
+전환: {ai_number(total_current_conversion)}건
+CPA: {ai_money(total_current_cpa)}
+CVR: {ai_percent(total_current_cvr)}
+
+광고비 변화: {ai_change(total_spend_change)}
+전환 변화: {ai_change(total_conversion_change)}
+CPA 변화: {ai_change(total_cpa_change)}
+CVR 변화: {ai_change(total_cvr_change)}
+"""
+
+
+            # ------------------------------------------------
+            # NVIDIA Client
             # ------------------------------------------------
 
             NVIDIA_API_KEY = st.secrets[
@@ -4019,350 +3974,206 @@ else:
             )
 
 
-            # ------------------------------------------------
-            # Python에서 이미 계산된 데이터
-            # ------------------------------------------------
-
-            overall_data = (
-                make_overall_ai_data()
-            )
-
-            media_data = (
-                make_media_ai_data()
-            )
-
-            campaign_data = (
-                make_campaign_ai_data()
-            )
-
-
             # =================================================
-            # AI Prompt
+            # Prompt
             # =================================================
 
             prompt = f"""
 너는 10년차 퍼포먼스 마케팅 전문가다.
 
-중요한 원칙이 있다.
+이번 분석에서 가장 중요한 원칙은 다음과 같다.
 
-이번 분석에서는 AI가 숫자를 계산하거나
-우수/저효율 대상을 임의로 선정하지 않는다.
+Python이 숫자 계산과 대상 선정을 이미 완료했다.
 
-Python에서 이미 실제 데이터를 계산했고,
-핵심 매체와 캠페인도 선별했다.
+따라서 너는 매체나 캠페인을 새롭게 선정하지 않는다.
 
-너의 역할은 Python 결과를 바탕으로
-
-1. 성과의 의미를 해석하고
-2. 변화의 원인을 데이터 관점에서 추론하고
-3. 실무적인 최적화 액션을 제안하는 것이다.
+Python 결과를 그대로 사용하고,
+그 결과를 마케팅 관점에서 설명한다.
 
 
 ============================================================
-[전체 성과]
+전체 성과
 ============================================================
 
-{overall_data}
-
-
-============================================================
-[매체 데이터]
-============================================================
-
-{media_data}
+{overall_ai_data}
 
 
 ============================================================
-[캠페인 데이터]
+매체 성과
 ============================================================
 
-{campaign_data}
-
-
-============================================================
-매우 중요한 분석 규칙
-============================================================
-
-### 매체 분석
-
-매체 분석에서는 반드시
-MEDIA_DATA와 PYTHON_MEDIA_FACTS만 사용한다.
-
-캠페인 데이터를 매체 분석에 사용하지 않는다.
-
-특히 다음 영역에서는
-캠페인명을 절대로 사용하지 않는다.
-
-- 잘하고 있는 매체
-- 개선이 필요한 매체
-- 매체 예산 운영
-
-매체 분석의 대상은 반드시
-실제 MEDIA_DATA의 '매체명'이어야 한다.
-
-
-### 캠페인 분석
-
-캠페인 분석에서는 CAMPAIGN_DATA를 사용한다.
-
-캠페인명은 이 영역에서만 사용한다.
+{media_ai_data}
 
 
 ============================================================
-숫자 사용 규칙
+캠페인 성과
 ============================================================
 
-제공된 숫자를 그대로 사용한다.
-
-새로운 숫자를 계산해서 만들어내지 않는다.
-
-데이터가 없는 경우
-"비교 데이터 없음" 또는 "-"라고 표현한다.
-
-절대로 "None", "nan", "NaN"을 출력하지 않는다.
+{campaign_ai_data}
 
 
 ============================================================
-원인 분석 규칙
+중요 규칙
 ============================================================
 
-데이터에 직접 나타나는 사실과
-추론을 구분한다.
+1. 매체와 캠페인을 절대로 혼동하지 않는다.
 
-예를 들어:
+2. "매체"라고 하면 반드시 실제 매체명만 사용한다.
 
-좋은 표현:
-"CPA가 개선되고 전환이 증가해 효율과 규모가
-동시에 개선된 것으로 볼 수 있습니다."
+3. 캠페인명은 캠페인 분석에서만 사용한다.
 
-좋은 표현:
-"CVR이 하락했기 때문에 유입 품질이나
-랜딩페이지의 영향 가능성을 확인할 필요가 있습니다."
+4. Python에서 제공하지 않은 숫자를 만들지 않는다.
 
-나쁜 표현:
-"랜딩페이지를 변경했기 때문에 CVR이 하락했습니다."
+5. 데이터에 없는 원인을 사실처럼 단정하지 않는다.
 
-데이터에서 확인할 수 없는 원인은
-사실처럼 단정하지 않는다.
+6. None, nan, NaN이라는 단어를 출력하지 않는다.
 
-가능성이 있는 경우
-"가능성이 있습니다."
-"확인할 필요가 있습니다."
-라고 표현한다.
+7. 일반적인 마케팅 조언보다 실제 제공된 데이터를 우선한다.
+
+8. 표를 만들지 않는다.
+
+9. 매체명을 새롭게 만들어내지 않는다.
+
+10. 캠페인명을 새롭게 만들어내지 않는다.
 
 
 ============================================================
-최종 출력
+작성 방식
 ============================================================
 
-
-# 📊 전체 성과 요약
-
-현재 전체 성과와 비교 기간의 변화를
-실제 숫자를 근거로 3~5문장으로 설명한다.
-
-반드시 다음을 포함한다.
-
-- 광고비
-- 전환
-- CPA
-- CVR
-- 가장 중요한 변화
-- 종합적인 판단
+다음 형식으로 작성한다.
 
 
-# 🏆 잘하고 있는 매체
+📊 전체 성과 요약
 
-Python에서 제공한
-'전환수 상위 매체'와 'CPA 우수 매체'를
-우선적으로 참고한다.
+3~4문장으로 작성한다.
 
-최대 3개까지 선정한다.
+광고비, 전환, CPA, CVR의 실제 수치를 사용한다.
 
-표 형식:
-
-| 매체 | CPA | 전환 | CVR | 왜 좋은가? |
-|---|---:|---:|---:|---|
-| 실제 매체명 | 실제 수치 | 실제 수치 | 실제 수치 | 데이터 기반 설명 |
-
-반드시 실제 매체명만 작성한다.
+비교 기간 대비 가장 중요한 변화가 무엇인지 설명한다.
 
 
-## 예산 확대 가능 여부
+🏆 잘하고 있는 매체
 
-각 매체에 대해:
+Python이 제공한 전환 상위 매체와 CPA 우수 매체를
+바탕으로 최대 3개만 설명한다.
 
-- 매체명
-- 판단: 확대 / 유지 / 테스트
-- 근거
+각 매체마다:
 
-를 작성한다.
+매체명:
+왜 좋은지:
+예산 운영 의견:
+
+형식으로 작성한다.
+
+
+⚠️ 개선이 필요한 매체
+
+Python이 제공한 CPA 악화 매체와
+전환 감소 매체를 바탕으로 최대 3개만 설명한다.
+
+각 매체마다:
+
+매체명:
+문제:
+우선 확인할 부분:
+
+형식으로 작성한다.
+
+
+🎯 캠페인 분석
+
+Python이 제공한 캠페인 데이터를 사용한다.
+
+다음 내용을 간단하게 설명한다.
+
+- 우수 캠페인
+- 저효율 캠페인
+- CPA 악화 캠페인
+- 전환 규모가 큰 캠페인
+
+캠페인명을 실제 데이터에서만 사용한다.
+
+
+💰 예산 운영 제안
+
+실제 성과 데이터를 근거로
+
+- 확대
+- 유지
+- 축소
+- 테스트
+
+중 적절한 판단을 제안한다.
 
 단순히 CPA가 낮다는 이유만으로
-확대하지 않는다.
+확대를 제안하지 않는다.
 
 전환 규모와 CPA 변화,
 CVR 변화도 함께 고려한다.
 
 
-# ⚠️ 개선이 필요한 매체
+🚀 우선 실행 액션 TOP 3
 
-Python에서 제공한
-'CPA 악화가 큰 매체'와
-'전환 감소가 큰 매체'를 우선적으로 참고한다.
+실제 데이터에서 발견된 문제를 기준으로
+구체적인 액션 3개를 작성한다.
 
-최대 3개까지 선정한다.
+각 액션마다:
 
-표 형식:
+무엇을 할지
+왜 해야 하는지
+어떤 지표를 볼지
 
-| 매체 | 문제점 | 우선 확인할 부분 |
-|---|---|---|
-| 실제 매체명 | CPA / 전환 / CVR 문제 | 확인할 항목 |
-
-반드시 실제 매체명만 사용한다.
-
-캠페인명을 작성하지 않는다.
-
-
-# 🎯 캠페인 분석
-
-CAMPAIGN_DATA만 사용한다.
-
-다음 순서로 분석한다.
-
-## ① 우수 캠페인
-
-전환 규모와 CPA를 함께 고려한다.
-
-## ② 저효율 캠페인
-
-CPA와 전환 규모를 함께 고려한다.
-
-## ③ CPA 개선 캠페인
-
-CPA 변화가 개선된 캠페인을 분석한다.
-
-## ④ CPA 악화 캠페인
-
-CPA 변화가 악화된 캠페인을 분석한다.
-
-## ⑤ 전환 규모가 큰 캠페인
-
-전환수가 많은 캠페인을 분석한다.
-
-
-# 💰 예산 운영 제안
-
-캠페인을 다음 중 하나로 판단한다.
-
-- 예산 확대
-- 유지
-- 축소
-- 테스트 필요
-
-판단 근거를 반드시 함께 작성한다.
-
-CPA 하나만 보고 판단하지 않는다.
-
-전환 규모,
-CPA 변화,
-CVR 변화,
-광고비 변화까지 함께 고려한다.
-
-
-# 🚀 우선 실행 액션 TOP 3
-
-현재 데이터에서 실제로 발견된 문제를 기준으로
-가장 중요한 액션 3개를 작성한다.
-
-각 액션은 다음 형식으로 작성한다.
-
-### 1. 액션명
-
-- 무엇을 변경할지
-- 왜 필요한지
-- 어떤 지표를 모니터링할지
-
-
-### 2. 액션명
-
-- 무엇을 변경할지
-- 왜 필요한지
-- 어떤 지표를 모니터링할지
-
-
-### 3. 액션명
-
-- 무엇을 변경할지
-- 왜 필요한지
-- 어떤 지표를 모니터링할지
+를 설명한다.
 
 
 ============================================================
-최종 검증
+주의
 ============================================================
 
-답변하기 전에 반드시 확인한다.
+매체 분석에서 캠페인명을 사용하지 않는다.
 
-1. 매체 분석에 캠페인명이 들어갔는가?
-→ 들어갔다면 제거한다.
+캠페인 분석에서만 캠페인명을 사용한다.
 
-2. 매체 분석 대상이 실제 매체명인가?
-→ 반드시 MEDIA_DATA의 매체명만 사용한다.
-
-3. 캠페인 분석에 없는 캠페인명을 만들었는가?
-→ 만들지 않는다.
-
-4. None / nan / NaN이 있는가?
-→ 모두 '-' 또는 '비교 데이터 없음'으로 수정한다.
-
-5. 일반적인 마케팅 조언만 하고 있지 않은가?
-→ 반드시 제공된 실제 숫자를 근거로 작성한다.
-
-6. 액션이 실제 발견된 성과 문제와 연결되어 있는가?
-→ 연결되지 않은 일반적인 조언은 제외한다.
+데이터가 부족하면 억지로 판단하지 말고
+"추가 확인이 필요합니다."라고 작성한다.
 
 한국어로 작성한다.
 """
 
 
             # =================================================
-            # NVIDIA API 1회 호출
+            # NVIDIA API
             # =================================================
 
             with st.spinner(
-                "🤖 Python 분석 결과를 NVIDIA AI가 해석하고 있습니다..."
+                "🤖 NVIDIA AI가 Python 분석 결과를 해석하고 있습니다..."
             ):
 
-                response = (
-                    client.chat.completions.create(
+                response = client.chat.completions.create(
 
-                        model="openai/gpt-oss-20b",
+                    model="openai/gpt-oss-20b",
 
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": (
-                                    "너는 10년차 퍼포먼스 "
-                                    "마케팅 분석 전문가다. "
-                                    "Python에서 계산한 데이터를 "
-                                    "근거로 분석하며, "
-                                    "숫자를 임의로 만들거나 "
-                                    "매체와 캠페인을 혼동하지 않는다."
-                                )
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Python에서 계산된 광고 성과 데이터를 "
+                                "해석하는 퍼포먼스 마케팅 전문가다. "
+                                "숫자와 매체/캠페인을 혼동하지 않는다."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
 
-                        temperature=0.15,
+                    temperature=0.1,
 
-                        max_tokens=3500,
+                    max_tokens=3000,
 
-                        stream=False
-                    )
+                    stream=False
                 )
 
 
@@ -4378,8 +4189,15 @@ CVR 변화,
             )
 
 
+            if not ai_result:
+
+                ai_result = (
+                    "AI 분석 결과를 생성하지 못했습니다."
+                )
+
+
             # ------------------------------------------------
-            # 혹시 AI가 None / nan을 출력하는 경우 제거
+            # None / NaN 방지
             # ------------------------------------------------
 
             ai_result = ai_result.replace(
@@ -4388,12 +4206,12 @@ CVR 변화,
             )
 
             ai_result = ai_result.replace(
-                "nan",
+                "NaN",
                 "-"
             )
 
             ai_result = ai_result.replace(
-                "NaN",
+                "nan",
                 "-"
             )
 
@@ -4402,10 +4220,6 @@ CVR 변화,
                 "ai_result"
             ] = ai_result
 
-
-        # ====================================================
-        # 오류 처리
-        # ====================================================
 
         except KeyError:
 
@@ -4422,7 +4236,7 @@ CVR 변화,
 
 
     # ========================================================
-    # AI 결과 출력
+    # 21-5. AI 결과 출력
     # ========================================================
 
     if st.session_state.get(
